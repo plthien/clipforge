@@ -31,8 +31,8 @@ const NAV_SECTIONS: { labelKey: string; items: NavItem[] }[] = [
     labelKey: "navSectionCreate",
     items: [
       { key: "navHome", href: "/start", icon: "home" },
-      { key: "navNew", href: "/project/new", icon: "plus", proOnly: true },
-      { key: "navClone", href: "/project/clone", icon: "flame" },
+      { key: "navNew", href: "/project/new", icon: "plus" },
+      { key: "navClone", href: "/project/clone", icon: "flame", proOnly: true },
       { key: "navMediaLab", href: "/media-lab", icon: "scan", proOnly: true },
       { key: "navBatch", href: "/batch", icon: "layers", proOnly: true },
     ],
@@ -42,7 +42,7 @@ const NAV_SECTIONS: { labelKey: string; items: NavItem[] }[] = [
     items: [
       { key: "navProjects", href: "/projects", icon: "folder" },
       { key: "navProducts", href: "/products", icon: "box" },
-      { key: "navPresenters", href: "/presenters", icon: "user" },
+      { key: "navPresenters", href: "/presenters", icon: "user", proOnly: true },
     ],
   },
 ];

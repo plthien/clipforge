@@ -15,8 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { LuUpload, LuPalette, LuZap, LuCheck, LuTriangleAlert } from "react-icons/lu";
-import { ATLAS_KEYS_URL } from "@/lib/atlas-onekey";
+import { LuUpload, LuPalette, LuTriangleAlert } from "react-icons/lu";
 import { useT } from "@/lib/i18n";
 import { useSettingsStore } from "@/lib/stores/settings-store";
 import { useBrandStore } from "@/lib/stores/brand-store";
@@ -29,8 +28,6 @@ import {
   type TTSProvider,
 } from "@/lib/tts-presets";
 import { mergeCustomModels } from "@/lib/gen-params";
-import { LLM_PRESETS } from "@/lib/llm-presets";
-import { ModelPicker } from "@/components/settings/model-picker";
 import { GenerationSettings } from "@/components/generation-settings";
 import { PresenterManager } from "@/components/presenter-manager";
 
@@ -267,17 +264,7 @@ export default function SettingsPage() {
     setDefaultAspectRatio,
     setDefaultImageModel,
     setDefaultVideoModel,
-    applyAtlasOneKey,
   } = useSettingsStore();
-
-  // one-click Atlas onboarding: a single Key auto-configures LLM/image-gen/video-gen/TTS
-  const [atlasOneKey, setAtlasOneKey] = useState("");
-  const [atlasApplied, setAtlasApplied] = useState(false);
-  const applyOneKey = () => {
-    if (!atlasOneKey.trim()) return;
-    applyAtlasOneKey(atlasOneKey.trim());
-    setAtlasApplied(true);
-  };
 
   // TTS preview playback state
   const [ttsTestStatus, setTtsTestStatus] = useState<"idle" | "testing" | "error">("idle");
@@ -439,38 +426,6 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* beginner one-click setup: a single Atlas Key auto-configures LLM/image-gen/video-gen/TTS, skipping manual item-by-item setup */}
-        <div className="mb-8 rounded-2xl border border-primary/30 bg-primary/5 p-5">
-          <div className="flex items-center gap-2 mb-1">
-            <LuZap className="w-4 h-4 text-primary" />
-            <h2 className="font-semibold text-sm">{t("oneKeyTitle")}</h2>
-          </div>
-          <p className="text-xs text-muted-foreground mb-3">{t("oneKeyDesc")}</p>
-          {atlasApplied ? (
-            <div className="flex items-center gap-2 text-sm text-emerald-400">
-              <LuCheck className="w-4 h-4 shrink-0" />
-              <span>{t("oneKeyDone")}</span>
-            </div>
-          ) : (
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Input
-                type="password"
-                value={atlasOneKey}
-                onChange={(e) => setAtlasOneKey(e.target.value)}
-                placeholder={t("oneKeyPlaceholder")}
-                className="flex-1"
-              />
-              <Button onClick={applyOneKey} disabled={!atlasOneKey.trim()} className="brand-gradient text-white border-0 shrink-0">
-                <LuZap className="w-4 h-4 mr-1.5" />
-                {t("oneKeyCta")}
-              </Button>
-            </div>
-          )}
-          <a href={ATLAS_KEYS_URL} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-primary hover:underline">
-            {t("oneKeyGetKey")}
-          </a>
-        </div>
-
         {/* tabs */}
         <div className="md:flex md:items-start md:gap-8">
           {/* Section rail: vertical on desktop (native settings-window feel), horizontal scroll on mobile */}
@@ -618,117 +573,33 @@ export default function SettingsPage() {
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                       </svg>
                     </div>
-                    <h3 className="font-semibold text-sm">{t("llmProvider")}</h3>
+                    <h3 className="font-semibold text-sm">DeepSeek</h3>
                   </div>
 
-                  {/* quick presets */}
-                  <div className="mb-4 p-3 rounded-lg bg-muted/50 border border-border/50">
-                    <p className="text-xs text-muted-foreground mb-2">{t("llmPresetHint")}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {LLM_PRESETS.map((preset) => (
-                        <button
-                          key={preset.label}
-                          onClick={() => setLLM({ ...llm, baseUrl: preset.baseUrl, model: preset.model, visionModel: preset.model, ...(preset.apiKey ? { apiKey: preset.apiKey } : {}) })}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border border-border/50 bg-background hover:border-primary/40 hover:text-primary transition-colors"
-                        >
-                          {preset.label}
-                          {preset.tipKey && (
-                            <span className="text-[10px] text-muted-foreground/70">({t(preset.tipKey as Parameters<typeof t>[0])})</span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
+                  <p className="text-xs text-muted-foreground mb-4">
+                    DeepSeek is the only text and vision LLM. Image/video providers remain separate.
+                  </p>
                   <div className="grid gap-4">
-                    {/* API base URL */}
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">
-                        {t("llmBaseUrlLabel")}
-                      </Label>
-                      <Input
-                        value={llm.baseUrl}
-                        onChange={(e) =>
-                          setLLM({ ...llm, baseUrl: e.target.value })
-                        }
-                        placeholder="https://api.openai.com/v1"
-                        className="font-mono text-xs"
-                      />
+                      <Label className="text-xs text-muted-foreground">DeepSeek endpoint</Label>
+                      <Input value="https://api.deepseek.com" readOnly className="font-mono text-xs" />
                     </div>
-
-                    {/* API Key */}
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">
-                        {t("apiKeyLabel")}
-                      </Label>
-                      <PasswordInput
-                        value={llm.apiKey}
-                        onChange={(apiKey) => setLLM({ ...llm, apiKey })}
-                        placeholder={t("llmApiKeyPlaceholder")}
-                      />
-                      {/* Pollinations 已改为「注册领每日免费额度」，直接把领 Key 的地址摆在输入框下面 */}
-                      {/pollinations\.ai/i.test(llm.baseUrl) && (
-                        <p className="text-xs text-muted-foreground">
-                          {t("pollinationsKeyHint")}{" "}
-                          <a
-                            href="https://enter.pollinations.ai/keys"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-primary underline underline-offset-2"
-                          >
-                            enter.pollinations.ai/keys
-                          </a>
-                        </p>
-                      )}
+                      <Label className="text-xs text-muted-foreground">{t("apiKeyLabel")}</Label>
+                      <PasswordInput value={llm.apiKey} onChange={(apiKey) => setLLM({ ...llm, apiKey })} placeholder="DeepSeek API key" />
                     </div>
-
-                    {/* model name */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">
-                          {t("llmTextModel")}
-                        </Label>
-                        <Input
-                          value={llm.model}
-                          onChange={(e) =>
-                            setLLM({ ...llm, model: e.target.value })
-                          }
-                          placeholder="gpt-4o"
-                          className="font-mono text-xs"
-                        />
-                        {/* 模型名靠手打是最常见的错配来源，本地 Ollama 还必须带 :tag（issue #19 追问） */}
-                        <ModelPicker
-                          baseUrl={llm.baseUrl}
-                          apiKey={llm.apiKey}
-                          onPick={(model) => setLLM({ ...llm, model })}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">
-                          {t("llmVisionModel")}
-                        </Label>
-                        <Input
-                          value={llm.visionModel ?? ""}
-                          onChange={(e) =>
-                            setLLM({
-                              ...llm,
-                              visionModel: e.target.value || undefined,
-                            })
-                          }
-                          placeholder="gpt-4o"
-                          className="font-mono text-xs"
-                        />
-                        <ModelPicker
-                          baseUrl={llm.baseUrl}
-                          apiKey={llm.apiKey}
-                          onPick={(visionModel) => setLLM({ ...llm, visionModel })}
-                        />
-                      </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">{t("llmTextModel")}</Label>
+                      <select value={llm.model} onChange={(e) => setLLM({ ...llm, model: e.target.value })}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono">
+                        <option value="deepseek-flash">deepseek-flash (vision)</option>
+                        <option value="deepseek-v4-pro">deepseek-v4-pro (text)</option>
+                      </select>
                     </div>
-                    {/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]):11434/i.test(llm.baseUrl) && (
-                      <p className="text-xs text-muted-foreground -mt-2">{t("ollamaModelHint")}</p>
-                    )}
-
+                    <p className="text-xs text-muted-foreground">
+                      Product vision analysis uses deepseek-flash even if the text model is deepseek-v4-pro.
+                      The existing local settings storage saves keys in plaintext.
+                    </p>
                     {/* test connection button */}
                     <div className="pt-3 mt-3 border-t border-border/50">
                       <Button
