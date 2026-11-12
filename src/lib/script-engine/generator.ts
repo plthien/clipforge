@@ -548,7 +548,8 @@ export async function analyzeProduct(
   config: LLMConfig,
 ): Promise<string> {
   const client = createClient(config);
-  const model = config.visionModel || config.model;
+  // DeepSeek V4 Pro is text-only. Product photos always use vision-enabled Flash.
+  const model = config.visionModel || "deepseek-flash";
 
   // Build message content with images
   const imageContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = imageUrls.map(

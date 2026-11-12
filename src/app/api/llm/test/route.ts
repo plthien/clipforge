@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { errText } from "@/lib/api-error";
 import { probeLLMEndpoint } from "@/lib/llm-probe";
+import { assertDeepSeekConfig } from "@/lib/deepseek-policy";
 
 /**
  * Server-side LLM connection test.
@@ -17,7 +18,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: errText(req, "缺少 baseUrl 或 apiKey", "Missing baseUrl or apiKey") }, { status: 400 });
     }
 
-    const outcome = await probeLLMEndpoint({ baseUrl: String(baseUrl), apiKey: String(apiKey), model: model ? String(model) : undefined });
+    const allowed = assertDeepSeekConfig({ baseUrl, model });
+    const outcome = await probeLLMEndpoint({ ...allowed, apiKey: String(apiKey) });
     return NextResponse.json({
       ok: outcome.ok,
       ...(outcome.status ? { status: outcome.status } : {}),
@@ -28,6 +30,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: false,
       error: error instanceof Error ? error.message : errText(req, "连接失败", "Connection failed"),
-    });
+    }, { status: 400 });
   }
 }

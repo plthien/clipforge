@@ -11,6 +11,7 @@ import { scripts as scriptsTable, projects, publishMetrics } from "@/lib/db/sche
 import { eq } from "drizzle-orm";
 import { apiError, errText } from "@/lib/api-error";
 import { llmErrorPair } from "@/lib/llm-error";
+import { assertDeepSeekConfig } from "@/lib/deepseek-policy";
 import { topConvertingStyle, topConvertingHook, buildPerformanceHint, type MetricInput } from "@/lib/performance-insights";
 
 /** Allowed enum values for the styleType column in the scripts table */
@@ -157,6 +158,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    assertDeepSeekConfig(llmConfig);
     // Product image analysis: convert local paths to base64 before passing to the vision model
     let analysis = body.productAnalysis;
     if (!analysis && productImages?.length > 0 && llmConfig) {
