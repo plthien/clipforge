@@ -258,6 +258,8 @@ export function mergeCustomModels(
   const extras = (customModels ?? [])
     .filter((cm) => cm.mediaType === mediaType)
     .filter((cm) => !enabledProviders || enabledProviders.has(cm.provider))
+    // Webhook R2 has a fixed verified two-model catalog; never invent other G-Labs wire models.
+    .filter((cm) => cm.provider !== "glabs-webhook")
     .map(customModelToModelLike)
     // Remove entries whose id already exists in the official list
     .filter((cm) => !fetched.some((m) => m.id === cm.id));

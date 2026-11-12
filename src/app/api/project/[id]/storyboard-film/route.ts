@@ -211,6 +211,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // lip-sync guardrail (advisory, never blocks): overstuffed lines drift out of sync near the
     // end of a segment — surfaced so the UI/CLI can suggest trimming before the paid generation
     const dialogueWarnings = dialogueDensityWarnings(shots);
+    if (providerName === "glabs-webhook") {
+      return apiError(req,
+        "G-Labs Meta 不支持本操作要求的参考图集合、精确时长和原生音频；请使用逐镜图生视频功能",
+        "G-Labs Meta does not support this film action's reference pack, exact duration and native audio; use per-shot image-to-video instead",
+        400);
+    }
     const provider = createProvider({ name: providerName, apiKey, baseUrl: baseUrl ?? "" });
 
     const opts = (options ?? {}) as { width?: number; height?: number };

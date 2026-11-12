@@ -84,3 +84,29 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows-r1-accepta
 - 原作者：[xixihhhh/clipforge](https://github.com/xixihhhh/clipforge)；fork：[plthien/clipforge](https://github.com/plthien/clipforge)。该分支不代表上游官方发布。
 - 代码采用 [GNU AGPL-3.0-only](LICENSE)，请同时阅读 [NOTICE](NOTICE) 并遵守上游署名、第三方服务和素材的各自条款。
 - 第三方平台、模型提供商与本仓库无官方隶属关系。
+
+
+### G-Labs Webhook (R2 — local media provider)
+
+Optional provider: **Settings → G-Labs Webhook**. Start the G-Labs desktop application
+and Webhook service, enter its separate `X-API-Key`, and set a **loopback port only**
+(default `http://127.0.0.1:8765`). A G-Labs **MAX** plan and eligible signed-in
+GPT Image 2 / Meta AI accounts are prerequisites. Health checks alone cannot
+verify account eligibility. No OpenAI platform key is used for this provider.
+
+Models: `glabs-gpt-image-2` for text-to-image / image-guided edits (≤5 positional
+PNG/JPEG/WEBP references, ratio whitelist, native output ≈1.57MP, no 4K);
+`meta_muse` is the ClipForge alias for Meta AI video at documented
+`POST /api/meta/generate` (t2v/i2v, optional end image, 480p/720p).
+**Meta does not accept a requested generation duration, generic reference videos,
+or a guaranteed audio option.** Its separate Settings selector sends exactly `480p`
+or `720p` without changing other providers' global resolution. ClipForge downloads
+completed results to `data/uploads/glabs-webhook`, validates and atomically copies
+saved project assets under `data/uploads/<projectId>` (preserving the recovery cache),
+extracts video tail frames there, and stores task IDs in SQLite before polling.
+Storyboard Grid tasks retain a versioned script identity and project-local source;
+recovery finalizes deterministic per-shot crops idempotently before marking the task
+complete. G-Labs task history is ephemeral after
+a G-Labs restart; an unknown task is never automatically resubmitted. Paid
+generation has no automatic POST retry. This integration needs real Webhook
+acceptance on the user's Windows PC before production use.

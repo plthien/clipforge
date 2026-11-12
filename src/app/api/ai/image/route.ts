@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleGlabsImage } from "@/lib/glabs-generation";
 import { createProvider } from "@/lib/providers";
 import { toRemoteUsableImage } from "@/lib/remote-image";
 import { apiError, errText } from "@/lib/api-error";
@@ -15,6 +16,8 @@ export async function POST(req: NextRequest) {
   if (!apiKey) {
     return apiError(req, "缺少 API Key，请先在设置中配置对应平台", "Missing API Key, please configure the corresponding platform in settings first");
   }
+
+  if (providerName === "glabs-webhook") return handleGlabsImage(body);
 
   try {
     const provider = createProvider({ name: providerName, apiKey, baseUrl });

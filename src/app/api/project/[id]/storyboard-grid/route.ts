@@ -1,51 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { execFile } from "child_process";
-import { promisify } from "util";
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
-import { getDataDir } from "@/lib/paths";
+import { createHash } from "node:crypto";
+import { recordAiTask, updateAiTask } from "@/lib/ai-tasks";
+import { ProviderError } from "@/lib/providers/base";
 import { getDb } from "@/lib/db";
-import { scripts, assets } from "@/lib/db/schema";
+import { scripts } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { createProvider } from "@/lib/providers";
 import { toRemoteUsableImage } from "@/lib/remote-image";
-import { buildStoryboardGridPrompt, computeGridCells, GRID_MAX_SHOTS } from "@/lib/storyboard-grid";
-import { ffmpegBin } from "@/lib/ffmpeg-path";
-import { probeMedia } from "@/lib/media-probe";
+import { buildStoryboardGridPrompt, GRID_MAX_SHOTS } from "@/lib/storyboard-grid";
+import { finalizeStoryboardGrid, storyboardGridMode } from "@/lib/storyboard-grid-finalizer";
 import { apiError, errText } from "@/lib/api-error";
-
-const execFileAsync = promisify(execFile);
-
-/** Download or decode the generated grid image into the project uploads dir; returns the physical path + public path. */
-async function persistGridImage(projectId: string, sourceUrl: string): Promise<{ absPath: string; publicPath: string }> {
-  const dir = join(getDataDir(), "uploads", projectId);
-  await mkdir(dir, { recursive: true });
-  let buf: Buffer;
-  let ext = "png";
-  if (sourceUrl.startsWith("data:")) {
-    const comma = sourceUrl.indexOf(",");
-    if (comma === -1) throw new Error("无法解析 data URI 图片");
-    const meta = sourceUrl.slice(5, comma);
-    buf = /;base64/i.test(meta)
-      ? Buffer.from(sourceUrl.slice(comma + 1), "base64")
-      : Buffer.from(decodeURIComponent(sourceUrl.slice(comma + 1)), "utf-8");
-    if (meta.includes("webp")) ext = "webp";
-    else if (meta.includes("jpeg") || meta.includes("jpg")) ext = "jpg";
-  } else if (/^https?:\/\//.test(sourceUrl)) {
-    const resp = await fetch(sourceUrl);
-    if (!resp.ok) throw new Error(`下载九宫格图失败: ${resp.status}`);
-    buf = Buffer.from(await resp.arrayBuffer());
-    const ct = resp.headers.get("content-type") || "";
-    if (ct.includes("webp")) ext = "webp";
-    else if (ct.includes("jpeg") || ct.includes("jpg")) ext = "jpg";
-  } else {
-    throw new Error("不支持的图片来源");
-  }
-  const fileName = `storyboard-grid-${Date.now()}.${ext}`;
-  const absPath = join(dir, fileName);
-  await writeFile(absPath, buf);
-  return { absPath, publicPath: `/api/files/${projectId}/${fileName}` };
-}
 
 /**
  * POST /api/project/[id]/storyboard-grid — one-image consistency anchoring.
@@ -106,9 +70,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // reference images (order matters — the prompt cites them by position):
     // [character sheet?, product photo?]; local /api/files paths travel as Base64
     const refInputs = [characterSheetUrl, productImageUrl].filter((u): u is string => !!u);
-    const referenceImageUrls = (await Promise.all(refInputs.map(toRemoteUsableImage))).filter(
-      (u): u is string => !!u
-    );
+    const referenceImageUrls = providerName === "glabs-webhook"
+      ? refInputs // validate locally with glabsImageDataUri; don't forward arbitrary HTTP URLs
+      : (await Promise.all(refInputs.map(toRemoteUsableImage))).filter((u): u is string => !!u);
 
     // 1) one generation renders every shot — consistency is physical, not prompted;
     // with references attached the sheet pins the person and the photo pins the product
@@ -117,53 +81,73 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       productImage: !!productImageUrl,
     });
     const provider = createProvider({ name: providerName, apiKey, baseUrl: baseUrl ?? "" });
-    const result = await provider.generateImage({
+    const imageOptions = {
       ...(options ?? {}),
       modelId: model,
-      mode: referenceImageUrls.length > 0 ? "image-to-image" : "text-to-image",
+      mode: referenceImageUrls.length > 0 ? "image-to-image" as const : "text-to-image" as const,
       ...(referenceImageUrls.length > 0 && { referenceImageUrls }),
       prompt,
-    });
+    };
+    let result;
+    let workflowTaskId: string;
+    let rowId: string | null = null;
+    if (providerName === "glabs-webhook" && provider.submitImageTask && provider.waitForTask) {
+      // Grid is a paid image job too: persist the ID before waiting, same as Assets.
+      const { taskId, modelId } = await provider.submitImageTask(imageOptions);
+      workflowTaskId = taskId;
+      rowId = await recordAiTask({ projectId: id, provider: providerName,
+        model: modelId, mediaType: "image", mode: storyboardGridMode(scriptId), prompt, taskId });
+      if (!rowId) return NextResponse.json({
+        error: "G-Labs accepted the task but SQLite persistence failed. Save the task ID and do not resubmit.",
+        taskId, recoverable: true,
+      }, { status: 503 });
+      try {
+        const finished = await provider.waitForTask(taskId, { interval: 5000 });
+        if (!finished.result || !("imageUrls" in finished.result) || !finished.result.imageUrls?.length)
+          throw new ProviderError("G-Labs returned no grid image", "GLABS_NO_RESULT", "glabs-webhook");
+        result = finished.result;
+        // Remote completion is not workflow completion: keep the paid task recoverable
+        // until every local crop and asset row has been finalized.
+        await updateAiTask(rowId, { status: "processing", resultUrls: result.imageUrls, error: null });
+      } catch (error) {
+        const failed = error instanceof ProviderError && error.code === "TASK_FAILED";
+        await updateAiTask(rowId, { status: failed ? "failed" : "unknown", error: "Storyboard grid task needs manual recovery" });
+        return NextResponse.json({ error: "Storyboard grid task needs manual recovery; do not resubmit",
+          taskId, recoverable: !failed }, { status: failed ? 500 : 504 });
+      }
+    } else {
+      result = await provider.generateImage(imageOptions);
+      workflowTaskId = /^[a-zA-Z0-9_-]{1,160}$/.test(result.taskId)
+        ? result.taskId
+        : "local-" + createHash("sha256").update(result.taskId + prompt).digest("hex").slice(0, 32);
+    }
     const gridUrl = result.imageUrls?.[0];
     if (!gridUrl) throw new Error("生图未返回图片");
 
-    // 2) persist the grid, then crop each cell into that shot's keyframe
-    const { absPath, publicPath } = await persistGridImage(id, gridUrl);
-    const probe = await probeMedia(absPath);
-    if (!probe.width || !probe.height) throw new Error("无法读取九宫格图片尺寸");
-    const cells = computeGridCells(probe.width, probe.height);
-
-    const dir = join(getDataDir(), "uploads", id);
-    const saved: { shotId: number; filePath: string }[] = [];
-    for (let i = 0; i < shots.length; i++) {
-      const cell = cells[i];
-      const fileName = `asset-${shots[i].shotId}-${Date.now()}-grid.png`;
-      const outPath = join(dir, fileName);
-      await execFileAsync(ffmpegBin(), [
-        "-y",
-        "-i", absPath,
-        "-vf", `crop=${cell.w}:${cell.h}:${cell.x}:${cell.y}`,
-        "-frames:v", "1",
-        outPath,
-      ]);
-      const filePath = `/api/files/${id}/${fileName}`;
-      // Keep older takes for review/rollback while making this fresh grid cell active.
-      await db.update(assets).set({ selected: false }).where(and(eq(assets.projectId, id), eq(assets.shotId, shots[i].shotId)));
-      await db.insert(assets).values({
+    try {
+      const finalized = await finalizeStoryboardGrid({
         projectId: id,
-        shotId: shots[i].shotId,
-        type: "ai_generated",
-        filePath,
+        taskId: workflowTaskId,
+        mode: storyboardGridMode(scriptId),
         provider: providerName,
         model,
-        prompt: `[storyboard-grid 第${i + 1}格] ${shots[i].description ?? ""}`.trim(),
-        selected: true,
-        status: "done",
+        sourceUrl: gridUrl,
       });
-      saved.push({ shotId: shots[i].shotId, filePath });
+      await updateAiTask(rowId, { status: "completed", resultUrls: [finalized.gridPath], error: null });
+      return NextResponse.json(finalized);
+    } catch (error) {
+      await updateAiTask(rowId, {
+        status: "unknown",
+        resultUrls: [gridUrl],
+        error: "Storyboard Grid finalization needs recovery",
+      });
+      if (rowId) return NextResponse.json({
+        error: error instanceof Error ? error.message : "Storyboard Grid finalization needs recovery",
+        taskId: workflowTaskId,
+        recoverable: true,
+      }, { status: 500 });
+      throw error;
     }
-
-    return NextResponse.json({ gridPath: publicPath, cells: saved, count: saved.length });
   } catch (error) {
     console.error("九宫格分镜生成失败:", error);
     return NextResponse.json(

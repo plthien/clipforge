@@ -119,6 +119,13 @@ function inferredModes(modelId: string): Pick<VideoModelCapabilities, "textToVid
 
 /** Normalize provider-specific video metadata into one UI-facing capability contract. */
 export function getVideoModelCapabilities(modelId: string, supportsAudio?: boolean, provider?: string): VideoModelCapabilities {
+  if (provider === "glabs-webhook" && modelId === "meta_muse") return {
+    confidence: "known", textToVideo: true, imageToVideo: true,
+    referenceImages: false, referenceVideo: false, referenceAudio: false,
+    lastFrame: true, nativeAudio: false, videoEdit: false,
+    temporalRetake: false, regionMask: false, multiKeyframes: false, performanceReference: false,
+    resolutionValues: ["480p", "720p"], aspectRatioValues: ["9:16", "16:9", "1:1"], maxReferenceImages: 0,
+  };
   const spec = getVideoParamSpec(modelId);
   const modes = inferredModes(modelId);
   const references = referenceCapabilities(modelId, provider);

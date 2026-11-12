@@ -125,6 +125,16 @@ function waitReady(port, tries = 120) {
 async function startServer() {
   const entry = serverEntry();
   const serverDir = path.dirname(entry);
+  // spawn ENOENT on Windows also means a missing child cwd; do not misleadingly
+  // attribute a failed Next build to an absent Electron executable.
+  if (!fs.existsSync(entry) || !fs.statSync(entry).isFile()) {
+    throw new Error("STANDALONE_SERVER_MISSING: " + entry +
+      " — run pnpm build and pnpm bundle:standalone before launching Electron");
+  }
+  if (!fs.existsSync(serverDir) || !fs.statSync(serverDir).isDirectory()) {
+    throw new Error("STANDALONE_DIRECTORY_MISSING: " + serverDir +
+      " — run pnpm build before launching Electron");
+  }
   const dataDir = path.join(app.getPath("userData"), "data");
   fs.mkdirSync(dataDir, { recursive: true });
   const port = await getFreePort();
@@ -220,7 +230,12 @@ if (hasInstanceLock) app.whenReady().then(async () => {
           `日志 / Log: ${logFilePath || "(不可用)"}\n\n--- 日志末尾 / log tail ---\n${readLogTail()}`
       );
     } else {
-      console.error("启动本地服务失败:", msg);
+      console.error("DESKTOP_SMOKE_FAILED", msg);
+      // The desktop smoke test includes main.js; app.quit() normally exits 0,
+      // falsely reporting PASS when fork/spawn or /api/health startup failed.
+      killServer();
+      app.exit(1);
+      return;
     }
     app.quit();
     return;

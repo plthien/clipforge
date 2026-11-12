@@ -1,12 +1,14 @@
-import { existsSync } from "fs";
-import { mkdir, writeFile } from "fs/promises";
-import { join } from "path";
+import { constants, existsSync } from "fs";
+import { copyFile, mkdir, realpath, rename, stat, unlink, writeFile } from "fs/promises";
+import { basename, extname, join, relative, sep } from "path";
+import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { assets } from "@/lib/db/schema";
-import { validateOrDelete } from "@/lib/media-validate";
-import { getDataDir } from "@/lib/paths";
+import { validateMediaFile, validateOrDelete } from "@/lib/media-validate";
+import { getDataDir, getUploadsDir } from "@/lib/paths";
 import { MAX_DOWNLOAD_BYTES } from "@/lib/providers/stock-types";
+import { GLABS_VIDEO_FILE_LIMIT } from "@/lib/providers/glabs-webhook";
 import { resolveUploadFilePath } from "@/lib/remote-image";
 import { sanitizeGenerationControlSummary, type GenerationControlSummary } from "@/lib/video-repair-plan";
 import { extractLastFrame, LAST_FRAME_SUFFIX } from "@/lib/video-composer/frame-extract";
@@ -26,9 +28,49 @@ async function assertValidMedia(absPath: string, ext: string): Promise<void> {
   if (!(await validateOrDelete(absPath, kind))) throw new Error("素材文件校验失败（下载内容损坏或非媒体文件），请重新生成");
 }
 
+async function materializeGlabsSource(projectId: string, sourceUrl: string): Promise<string> {
+  const match = /^\/api\/files\/glabs-webhook\/([a-f0-9]{64}\.(?:png|jpg|webp|mp4))$/i.exec(sourceUrl);
+  if (!match) throw new Error("Invalid G-Labs managed media path");
+  const glabsRoot = await realpath(join(getUploadsDir(), "glabs-webhook"));
+  const source = await realpath(join(glabsRoot, match[1]));
+  const rel = relative(glabsRoot, source);
+  if (!rel || rel === ".." || rel.startsWith(".." + sep) || rel.startsWith(sep))
+    throw new Error("G-Labs media escaped its managed uploads directory");
+  const info = await stat(source);
+  const ext = extname(source).toLowerCase();
+  const kind = ext === ".mp4" ? "video" : "image";
+  const sizeLimit = kind === "video" ? GLABS_VIDEO_FILE_LIMIT : 24 * 1024 * 1024;
+  if (!info.isFile() || info.size <= 0 || info.size > sizeLimit) throw new Error("Invalid or oversized G-Labs media file");
+  if (!(await validateMediaFile(source, kind))) throw new Error("G-Labs media metadata is invalid");
+
+  const directory = join(getUploadsDir(), projectId);
+  await mkdir(directory, { recursive: true });
+  const fileName = `glabs-${basename(source)}`;
+  const target = join(directory, fileName);
+  if (existsSync(target)) {
+    if (await validateMediaFile(target, kind)) return `/api/files/${projectId}/${fileName}`;
+    await unlink(target);
+  }
+  const part = join(directory, `.${fileName}.${randomUUID()}.part`);
+  try {
+    await copyFile(source, part, constants.COPYFILE_EXCL);
+    const copied = await stat(part);
+    if (!copied.isFile() || copied.size !== info.size || !(await validateOrDelete(part, kind)))
+      throw new Error("Project-owned G-Labs media copy failed validation");
+    try { await rename(part, target); }
+    catch (error) {
+      if (!existsSync(target) || !(await validateMediaFile(target, kind))) throw error;
+    }
+  } finally {
+    await unlink(part).catch(() => {});
+  }
+  return `/api/files/${projectId}/${fileName}`;
+}
+
 /** Persist an expiring provider URL or data URI under the project's uploads directory. */
 export async function persistAssetSource(projectId: string, sourceUrl: string, shotId: number, prefix = "asset"): Promise<string> {
   if (!SAFE_ID.test(projectId)) throw new Error("无效的项目ID");
+  if (sourceUrl.startsWith("/api/files/glabs-webhook/")) return materializeGlabsSource(projectId, sourceUrl);
   if (sourceUrl.startsWith("/api/files/")) {
     const local = resolveUploadFilePath(sourceUrl);
     if (!local || !existsSync(local)) throw new Error("本地素材文件不存在");

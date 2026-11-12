@@ -33,6 +33,7 @@ export const TRANSITIONS: Record<TransitionMode, TransitionConfig> = {
     label: "AI 智能过渡",
     description: "提取前一片段最后一帧和后一片段首帧，用 AI 生成自然转场视频",
     supportedModels: [
+      "meta_muse", // G-Labs /api/meta/generate accepts start_image and optional end_image
       // Seedance 2.0 (supports start frame image + end frame last_image)
       "bytedance/seedance-2.0/image-to-video",
       "bytedance/seedance-2.0-fast/image-to-video",
