@@ -3,7 +3,9 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
-import { getDataDir } from "@/lib/paths";
+import { getDataDir, getUploadsDir } from "@/lib/paths";
+import { recordAiTask, updateAiTask } from "@/lib/ai-tasks";
+import { ProviderError } from "@/lib/providers/base";
 import { getDb } from "@/lib/db";
 import { scripts, assets } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -18,6 +20,10 @@ const execFileAsync = promisify(execFile);
 
 /** Download or decode the generated grid image into the project uploads dir; returns the physical path + public path. */
 async function persistGridImage(projectId: string, sourceUrl: string): Promise<{ absPath: string; publicPath: string }> {
+  if (/^\/api\/files\/glabs-webhook\/[a-f0-9]{64}\.(?:png|jpg|webp)$/i.test(sourceUrl)) {
+    const name = sourceUrl.split("/").pop()!;
+    return { absPath: join(getUploadsDir(), "glabs-webhook", name), publicPath: sourceUrl };
+  }
   const dir = join(getDataDir(), "uploads", projectId);
   await mkdir(dir, { recursive: true });
   let buf: Buffer;
@@ -106,9 +112,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // reference images (order matters — the prompt cites them by position):
     // [character sheet?, product photo?]; local /api/files paths travel as Base64
     const refInputs = [characterSheetUrl, productImageUrl].filter((u): u is string => !!u);
-    const referenceImageUrls = (await Promise.all(refInputs.map(toRemoteUsableImage))).filter(
-      (u): u is string => !!u
-    );
+    const referenceImageUrls = providerName === "glabs-webhook"
+      ? refInputs // validate locally with glabsImageDataUri; don't forward arbitrary HTTP URLs
+      : (await Promise.all(refInputs.map(toRemoteUsableImage))).filter((u): u is string => !!u);
 
     // 1) one generation renders every shot — consistency is physical, not prompted;
     // with references attached the sheet pins the person and the photo pins the product
@@ -117,13 +123,38 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       productImage: !!productImageUrl,
     });
     const provider = createProvider({ name: providerName, apiKey, baseUrl: baseUrl ?? "" });
-    const result = await provider.generateImage({
+    const imageOptions = {
       ...(options ?? {}),
       modelId: model,
-      mode: referenceImageUrls.length > 0 ? "image-to-image" : "text-to-image",
+      mode: referenceImageUrls.length > 0 ? "image-to-image" as const : "text-to-image" as const,
       ...(referenceImageUrls.length > 0 && { referenceImageUrls }),
       prompt,
-    });
+    };
+    let result;
+    if (providerName === "glabs-webhook" && provider.submitImageTask && provider.waitForTask) {
+      // Grid is a paid image job too: persist the ID before waiting, same as Assets.
+      const { taskId, modelId } = await provider.submitImageTask(imageOptions);
+      const rowId = await recordAiTask({ projectId: id, provider: providerName,
+        model: modelId, mediaType: "image", mode: imageOptions.mode, prompt, taskId });
+      if (!rowId) return NextResponse.json({
+        error: "G-Labs accepted the task but SQLite persistence failed. Save the task ID and do not resubmit.",
+        taskId, recoverable: true,
+      }, { status: 503 });
+      try {
+        const finished = await provider.waitForTask(taskId, { interval: 5000 });
+        if (!finished.result || !("imageUrls" in finished.result) || !finished.result.imageUrls?.length)
+          throw new ProviderError("G-Labs returned no grid image", "GLABS_NO_RESULT", "glabs-webhook");
+        result = finished.result;
+        await updateAiTask(rowId, { status: "completed", resultUrls: result.imageUrls, error: null });
+      } catch (error) {
+        const failed = error instanceof ProviderError && error.code === "TASK_FAILED";
+        await updateAiTask(rowId, { status: failed ? "failed" : "unknown", error: "Storyboard grid task needs manual recovery" });
+        return NextResponse.json({ error: "Storyboard grid task needs manual recovery; do not resubmit",
+          taskId, recoverable: !failed }, { status: failed ? 500 : 504 });
+      }
+    } else {
+      result = await provider.generateImage(imageOptions);
+    }
     const gridUrl = result.imageUrls?.[0];
     if (!gridUrl) throw new Error("生图未返回图片");
 

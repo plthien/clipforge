@@ -922,6 +922,12 @@ export default function AssetsPage() {
    */
   const previewStoryboardFilm = useCallback(async () => {
     if (!videoModelTarget || !scriptId || isFilmGenerating) return;
+    if (videoModelTarget.provider === "glabs-webhook") {
+      setFilmNotice({ text: locale === "en"
+        ? "Meta Muse cannot render this single-call film (required reference pack, exact duration and audio); use per-shot image-to-video."
+        : "Meta Muse không hỗ trợ film một lượt với reference pack, thời lượng chính xác và audio; hãy dùng từng shot image-to-video." });
+      return;
+    }
     setIsFilmGenerating(true);
     setFilmNotice(null);
     try {
