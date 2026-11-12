@@ -38,10 +38,12 @@ export async function POST(req: NextRequest) {
 
       const result = status.result;
       const videoUrls = result && "videoUrls" in result ? result.videoUrls : undefined;
+      const imageUrls = result && "imageUrls" in result ? result.imageUrls : undefined;
+      const resultUrls = videoUrls ?? imageUrls;
 
       await updateAiTaskByProviderTaskId(providerName, taskId, {
         status: toRowStatus(status.status),
-        ...(videoUrls && { resultUrls: videoUrls }),
+        ...(resultUrls && { resultUrls }),
         error: status.error ?? null,
       });
 
@@ -49,6 +51,9 @@ export async function POST(req: NextRequest) {
         taskId,
         status: status.status,
         videoUrls,
+        imageUrls,
+        ...(result && "duration" in result && { duration: result.duration }),
+        ...(result && "hasAudio" in result && { hasAudio: result.hasAudio }),
         error: status.error,
       });
     } catch (error) {

@@ -149,6 +149,7 @@ export const useSettingsStore = create<SettingsState>()(
         alibaba: { enabled: false, apiKey: "" },
         siliconflow: { enabled: false, apiKey: "" },
         openai: { enabled: false, apiKey: "" },
+        "glabs-webhook": { enabled: false, apiKey: "", baseUrl: "http://127.0.0.1:8765" },
       },
       llm: normalizeDeepSeekSetting(),
       tts: {

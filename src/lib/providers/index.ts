@@ -11,6 +11,7 @@ import { ReplicateProvider } from './replicate'
 import { AlibabaProvider } from './alibaba'
 import { SiliconFlowProvider } from './siliconflow'
 import { OpenAIProvider } from './openai'
+import { GlabsWebhookProvider } from './glabs-webhook'
 
 // ==================== Provider 注册表 ====================
 
@@ -73,6 +74,13 @@ registerProvider({
   displayName: 'OpenAI',
   description: 'OpenAI 与兼容服务，支持图片编辑及异步视频生成',
   factory: (config) => new OpenAIProvider(config),
+})
+
+registerProvider({
+  name: 'glabs-webhook',
+  displayName: 'G-Labs Webhook',
+  description: 'Local G-Labs GPT Image 2 and Meta Muse media webhook',
+  factory: (config) => new GlabsWebhookProvider(config),
 })
 
 // ==================== 工厂函数 ====================
@@ -159,3 +167,4 @@ export { VolcEngineProvider } from './volcengine'
 export { AlibabaProvider } from './alibaba'
 export { SiliconFlowProvider } from './siliconflow'
 export { OpenAIProvider } from './openai'
+export { GlabsWebhookProvider } from './glabs-webhook'

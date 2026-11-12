@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { checkGlabsHealth, glabsOrigin } from "@/lib/providers/glabs-webhook";
 import { normalizeChatBase } from "@/lib/llm-models";
 
 /**
@@ -72,6 +73,31 @@ export async function POST(req: NextRequest) {
   const { name, apiKey, baseUrl } = body;
   if (!name || !apiKey) {
     return NextResponse.json({ status: "unknown", message: "缺少平台或 Key" }, { status: 400 });
+  }
+
+  if (name === "glabs-webhook") {
+    let origin: string;
+    try { origin = glabsOrigin(baseUrl); }
+    catch { return NextResponse.json({ status: "invalid", message: "Only http://127.0.0.1:PORT is allowed" }, { status: 400 }); }
+    if (!(await checkGlabsHealth(origin))) return NextResponse.json({
+      status: "unknown", message: "G-Labs unreachable. Start desktop G-Labs and Webhook; MAX plan is required."
+    });
+    // No paid POST. An unknown task ID is a read-only best-effort auth check. A 404
+    // is NOT evidence that any model/account is eligible, and may not prove auth.
+    try {
+      const response = await fetch(origin + "/api/status/__clipforge_readonly_check__", {
+        headers: { "X-API-Key": apiKey }, redirect: "error",
+        signal: AbortSignal.timeout(5000), cache: "no-store",
+      });
+      if (response.status === 401 || response.status === 403) return NextResponse.json({
+        status: "invalid", message: "G-Labs rejected the key or permission (MAX tier may be required)."
+      });
+      return NextResponse.json({
+        status: "unknown", message: "G-Labs reachable. Authentication/account eligibility NOT verified by this read-only check; GPT Image 2 and Meta login + MAX required."
+      });
+    } catch {
+      return NextResponse.json({ status: "unknown", message: "G-Labs health reachable, authenticated check unavailable; no paid job submitted." });
+    }
   }
 
   const probe = buildProbe(name, apiKey, baseUrl);
