@@ -2,7 +2,7 @@
  * R2 G-Labs route integration. No existing provider's request contract is changed.
  * The accepted task ID is saved BEFORE any GET polling or file download.
  */
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createProvider } from "@/lib/providers";
 import { ProviderError } from "@/lib/providers/base";
 import type { ImageOptions, VideoOptions } from "@/lib/providers/types";
@@ -66,6 +66,9 @@ async function waitAndPersist(
     const result = status.result;
     const urls = result && ("imageUrls" in result ? result.imageUrls : result.videoUrls);
     if (!urls?.length) throw new ProviderError("G-Labs completed but returned no local media", "GLABS_NO_RESULT", "glabs-webhook");
+    if ((mediaType === "image" && !(result && "imageUrls" in result)) ||
+        (mediaType === "video" && !(result && "videoUrls" in result)))
+      throw new ProviderError("G-Labs returned the wrong media type", "GLABS_BAD_RESULT", "glabs-webhook");
     await updateAiTask(rowId, { status: "completed", resultUrls: urls, error: null });
     if (mediaType === "image" && result && "imageUrls" in result)
       return NextResponse.json(result);
@@ -82,7 +85,7 @@ async function waitAndPersist(
 }
 
 /** Used only when provider=glabs-webhook; no double-submit or speculative endpoint fallback. */
-export async function handleGlabsImage(req: NextRequest, body: Record<string, unknown>): Promise<NextResponse> {
+export async function handleGlabsImage(body: Record<string, unknown>): Promise<NextResponse> {
   try {
     validInputs(body, ["imageUrl", "imageUrls"]);
     if (body.model !== GLABS_IMAGE_MODEL) throw new ProviderError("Choose GPT Image 2 in G-Labs image picker", "GLABS_BAD_MODEL", "glabs-webhook");
@@ -105,7 +108,7 @@ export async function handleGlabsImage(req: NextRequest, body: Record<string, un
   } catch (error) { return errorResponse(error); }
 }
 
-export async function handleGlabsVideo(req: NextRequest, body: Record<string, unknown>): Promise<NextResponse> {
+export async function handleGlabsVideo(body: Record<string, unknown>): Promise<NextResponse> {
   try {
     validInputs(body, ["imageUrl", "lastImageUrl", "referenceVideoUrls", "referenceImageUrls", "referenceAudioUrls"]);
     if (body.model !== GLABS_VIDEO_MODEL) throw new ProviderError("Choose Meta Muse in G-Labs video picker", "GLABS_BAD_MODEL", "glabs-webhook");

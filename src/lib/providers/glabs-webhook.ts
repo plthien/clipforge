@@ -151,7 +151,8 @@ export class GlabsWebhookProvider extends BaseProvider {
       if (response.status === 429) return fail("G-Labs đang giới hạn số lượt, không tự thử lại", "GLABS_RATE_LIMIT");
       return fail("G-Labs không xác nhận tạo job (HTTP " + response.status + "). Đối soát trước khi thử lại.", "GLABS_SUBMIT_UNCERTAIN");
     }
-    const ack = await jsonResponse(response);
+    const ack = await jsonResponse(response).catch(() =>
+      fail("G-Labs đã trả HTTP 202 nhưng ACK không đọc được; đối soát trước khi thử lại", "GLABS_SUBMIT_UNCERTAIN"));
     if (typeof ack.task_id !== "string" || !/^[a-zA-Z0-9_-]{1,160}$/.test(ack.task_id) || ack.status !== "pending")
       return fail("G-Labs 202 thiếu task_id hợp lệ; đối soát trước khi thử lại", "GLABS_SUBMIT_UNCERTAIN");
     return ack.task_id;
@@ -171,7 +172,10 @@ export class GlabsWebhookProvider extends BaseProvider {
     if (options.mode === "image-to-image" && !sources.length) return fail("Cần ít nhất 1 ảnh tham chiếu", "GLABS_BAD_REFERENCE");
     if (options.mode === "text-to-image" && sources.length) return fail("Có ảnh tham chiếu, hãy chọn image-to-image", "GLABS_BAD_MODE");
     const references = await Promise.all(sources.map(glabsImageDataUri));
-    const aspect = extra.aspect_ratio === undefined ? ratio(options.width, options.height) : strEnum(extra.aspect_ratio, IMAGE_RATIOS, "9:16");
+    const expectedAspect = ratio(options.width, options.height);
+    const aspect = extra.aspect_ratio === undefined ? expectedAspect : strEnum(extra.aspect_ratio, IMAGE_RATIOS, "9:16");
+    if ((options.width !== undefined || options.height !== undefined) && aspect !== expectedAspect)
+      return fail("G-Labs aspect_ratio xung đột với kích thước đã chọn", "GLABS_BAD_RATIO");
     const taskId = await this.submit("/api/openai/generate", {
       prompt: options.prompt.trim(), aspect_ratio: aspect,
       quality: strEnum(extra.quality, ["low", "medium", "high"], "high"),
@@ -200,7 +204,10 @@ export class GlabsWebhookProvider extends BaseProvider {
     const resolution = strEnum(extra.resolution, ["480p", "720p"], "720p");
     const count = extra.count ?? 1;
     if (!Number.isInteger(count) || Number(count) < 1 || Number(count) > 4) return fail("Meta count phải từ 1 đến 4", "GLABS_BAD_PARAMETER");
-    const aspect = extra.aspect_ratio === undefined ? ratio(options.width, options.height, VIDEO_RATIOS) : strEnum(extra.aspect_ratio, VIDEO_RATIOS, "9:16");
+    const expectedAspect = ratio(options.width, options.height, VIDEO_RATIOS);
+    const aspect = extra.aspect_ratio === undefined ? expectedAspect : strEnum(extra.aspect_ratio, VIDEO_RATIOS, "9:16");
+    if ((options.width !== undefined || options.height !== undefined) && aspect !== expectedAspect)
+      return fail("G-Labs aspect_ratio xung đột với kích thước đã chọn", "GLABS_BAD_RATIO");
     if (options.mode === "image-to-video" && !options.firstFrameUrl) return fail("Meta i2v yêu cầu start_image", "GLABS_BAD_REFERENCE");
     if (options.mode === "text-to-video" && (options.firstFrameUrl || options.lastFrameUrl)) return fail("Meta t2v không nhận ảnh đầu/cuối", "GLABS_BAD_MODE");
     const start = options.firstFrameUrl ? await glabsImageDataUri(options.firstFrameUrl) : undefined;
