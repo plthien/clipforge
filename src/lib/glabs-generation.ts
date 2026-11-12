@@ -101,7 +101,7 @@ export async function handleGlabsImage(body: Record<string, unknown>): Promise<N
       ...(provided as Partial<ImageOptions>),
       ...(sources.length ? { referenceImageUrls: sources as string[] } : {}),
     };
-    const provider = createProvider({ name: "glabs-webhook", apiKey: body.apiKey as string, baseUrl: body.baseUrl as string | undefined });
+    const provider = createProvider({ name: "glabs-webhook", apiKey: body.apiKey as string, baseUrl: typeof body.baseUrl === "string" ? body.baseUrl : "" });
     if (!provider.submitImageTask) throw new Error("G-Labs image task support unavailable");
     const { taskId, modelId } = await provider.submitImageTask(options);
     return await waitAndPersist(provider, taskId, modelId, "image", body, mode);
@@ -132,7 +132,7 @@ export async function handleGlabsVideo(body: Record<string, unknown>): Promise<N
       ...(body.imageUrl !== undefined ? { firstFrameUrl: body.imageUrl as string } : {}),
       ...(body.lastImageUrl !== undefined ? { lastFrameUrl: body.lastImageUrl as string } : {}),
     };
-    const provider = createProvider({ name: "glabs-webhook", apiKey: body.apiKey as string, baseUrl: body.baseUrl as string | undefined });
+    const provider = createProvider({ name: "glabs-webhook", apiKey: body.apiKey as string, baseUrl: typeof body.baseUrl === "string" ? body.baseUrl : "" });
     if (!provider.submitVideoTask) throw new Error("G-Labs video task support unavailable");
     const { taskId, modelId } = await provider.submitVideoTask(options);
     return await waitAndPersist(provider, taskId, modelId, "video", body, mode);
