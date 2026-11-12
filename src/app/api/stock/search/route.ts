@@ -161,7 +161,7 @@ export async function POST(req: NextRequest) {
     const c = picked[i];
     try {
       const base = `${c.source}_${c.id}_${Date.now()}_${i}`;
-      const { filePath, bytes } = await downloadStockFile(c.downloadUrl, stockDir, base);
+      const { filePath, bytes } = await downloadStockFile(c.downloadUrl, stockDir, base, c.mediaType, c.source);
       const publicUrl = `/api/files/${projectId}/stock/${basename(filePath)}`;
 
       const [row] = await db

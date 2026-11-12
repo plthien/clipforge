@@ -241,7 +241,8 @@ export async function downloadStockFile(
   url: string,
   destDir: string,
   fileBaseName: string,
-  mediaType?: StockMediaType
+  mediaType?: StockMediaType,
+  source?: StockSourceId
 ): Promise<DownloadResult> {
   const { writeFile, copyFile, stat } = await import("fs/promises");
   const { join, isAbsolute, win32 } = await import("node:path");
@@ -253,6 +254,8 @@ export async function downloadStockFile(
   // paths must never reach fetch(); file URLs must use platform-aware decoding.
   const isFileUrl = /^file:\/\//i.test(url);
   if (isAbsolute(url) || win32.isAbsolute(url) || isFileUrl) {
+    // Only server-side local library results may request filesystem copies.
+    if (source && source !== "local") throw new Error("INVALID_STOCK_SOURCE_SCHEME");
     const srcPath = isFileUrl ? fileURLToPath(url) : url;
     const st = await stat(srcPath);
     if (st.size > MAX_DOWNLOAD_BYTES) throw new Error(`素材体积 ${st.size} 超过上限 ${MAX_DOWNLOAD_BYTES}`);
@@ -262,6 +265,7 @@ export async function downloadStockFile(
     return { filePath: destPath, bytes: st.size };
   }
 
+  if (source === "local") throw new Error("INVALID_STOCK_SOURCE_SCHEME");
   if (!/^https?:\/\//i.test(url)) throw new Error("UNSUPPORTED_STOCK_URL_SCHEME");
   const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error(`素材下载失败 HTTP ${res.status}`);

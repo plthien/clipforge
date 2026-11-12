@@ -105,7 +105,7 @@ export async function persistCandidate(
   const stockDir = join(getUploadsDir(), projectId, "stock");
   await mkdir(stockDir, { recursive: true });
   const base = `${c.source}_${c.id}_${Date.now()}_${shotId}`;
-  const { filePath } = await downloadStockFile(c.downloadUrl, stockDir, base, c.mediaType);
+  const { filePath } = await downloadStockFile(c.downloadUrl, stockDir, base, c.mediaType, c.source);
   // Real decode-level check: a CDN that cut the stream or answered with an HTML error page would
   // otherwise fail the whole single-pass compose later with no hint of which asset broke.
   if (!(await validateOrDelete(filePath, c.mediaType === "video" ? "video" : "image"))) {

@@ -51,12 +51,13 @@ async function imagePathToBase64(imagePath: string): Promise<string> {
     if (!within || within === ".." || within.startsWith(".." + sep) || isAbsolute(within))
       throw new Error("INVALID_PRODUCT_IMAGE_REF");
     const buffer = await readFile(realFile);
-    const ext = realFile.split(".").pop()?.toLowerCase() || "png";
+    const ext = realFile.split(".").pop()?.toLowerCase() || "";
     const mimes: Record<string, string> = {
       jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
       webp: "image/webp", gif: "image/gif", svg: "image/svg+xml",
     };
-    return `data:${mimes[ext] || "image/png"};base64,${buffer.toString("base64")}`;
+    if (!mimes[ext]) throw new Error("INVALID_PRODUCT_IMAGE_REF");
+    return `data:${mimes[ext]};base64,${buffer.toString("base64")}`;
   } catch (error) {
     if (error instanceof Error && error.message === "INVALID_PRODUCT_IMAGE_REF") throw error;
     // Avoid disclosing paths and sensitive filesystem details to logs/clients.
