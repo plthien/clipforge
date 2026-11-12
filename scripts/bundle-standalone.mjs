@@ -3,7 +3,7 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { execSync } from "child_process";
 import { createRequire } from "module";
-import { join } from "path";
+import { isAbsolute, join, relative, sep } from "path";
 
 const require = createRequire(import.meta.url);
 const root = process.cwd();
@@ -86,12 +86,36 @@ async function rebuildBetterSqlite3ForElectron() {
   if (!res.ok) {
     throw new Error(`下载 Electron 预编译失败 ${res.status}：${url}（确认 better-sqlite3 ${bsVer} 该 release 有 electron-v${abi}-${plat}-${arch} 资产）`);
   }
+  const nextRoot = realpathSync(join(root, ".next"));
+  const insideBuild = (target) => {
+    const rel = relative(nextRoot, realpathSync(target));
+    return rel !== "" && rel !== ".." && !rel.startsWith(".." + sep) && !isAbsolute(rel);
+  };
+  // Output tracing can hardlink .next files to the repository's node_modules.
+  // Never extract a tar archive in place over a possibly hardlinked native binary:
+  // this could silently replace Node ABI 127 with Electron ABI 146 in the SOURCE tree.
+  if (!insideBuild(bsDir)) {
+    throw new Error("standalone better-sqlite3 resolves outside .next; refusing to modify Node ABI source");
+  }
   const tmp = join(root, ".next", "bs-electron.tar.gz");
+  const stage = join(root, ".next", "bs-electron-staging");
   writeFileSync(tmp, Buffer.from(await res.arrayBuffer()));
-  execSync(`tar -xzf "${tmp}" -C "${bsDir}"`);
-
+  rmSync(stage, { recursive: true, force: true });
+  mkdirSync(stage, { recursive: true });
   const node = join(bsDir, "build", "Release", "better_sqlite3.node");
-  if (!existsSync(node)) throw new Error("解包后未见 better_sqlite3.node，Electron ABI 重建失败");
+  try {
+    execSync(`tar -xzf "${tmp}" -C "${stage}"`);
+    const prebuilt = join(stage, "build", "Release", "better_sqlite3.node");
+    if (!existsSync(prebuilt)) throw new Error("解包后未见 better_sqlite3.node，Electron ABI 重建失败");
+    // Unlink only the standalone directory entry before copying; this breaks
+    // hardlinks to the Node-compatible binary rather than overwriting its inode.
+    rmSync(node, { force: true });
+    copyFileSync(prebuilt, node);
+  } finally {
+    rmSync(stage, { recursive: true, force: true });
+    rmSync(tmp, { force: true });
+  }
+  if (!existsSync(node)) throw new Error("standalone Electron ABI binary missing");
 
   // 关键：Next 构建会把 serverExternalPackages 的原生包再拷一份到 standalone/.next/node_modules/<包名>-<hash>/，
   // 运行时优先加载的是这一份而不是顶层 node_modules 那份——只换顶层会导致打包 App 里
@@ -109,6 +133,9 @@ async function rebuildBetterSqlite3ForElectron() {
       const target = join(dotNextNM, name, "build", "Release", "better_sqlite3.node");
       if (!existsSync(target)) continue;
       const real = realpathSync(target);
+      if (!insideBuild(real)) {
+        throw new Error(`Traced better-sqlite3 binary resolves outside .next: ${target}`);
+      }
       if (real === realpathSync(node)) {
         // mac：副本目录是指回顶层 node_modules/better-sqlite3 的符号链接，顶层刚换过 = 这份已是 Electron ABI
         replaced.push(`${target}（链接指向顶层，已随顶层替换）`);

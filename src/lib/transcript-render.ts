@@ -12,7 +12,7 @@ import {
   type TranscriptEditPlan,
 } from "@/lib/transcript-editor";
 import {
-  escapeSubtitlesPath,
+  escapeSubtitlesFilterPath,
   resolveChineseFontFamily,
   resolveChineseFontFile,
   withComposeSlot,
@@ -78,8 +78,8 @@ export function buildTranscriptRenderInvocation(input: BuildTranscriptRenderInpu
   const normalizedVideo = input.subtitlePath ? "vbase" : "vout";
   filters.push(`[${currentVideo}]scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1,format=yuv420p[${normalizedVideo}]`);
   if (input.subtitlePath) {
-    const fonts = input.fontDirectory ? `:fontsdir=${escapeSubtitlesPath(input.fontDirectory)}` : "";
-    filters.push(`[vbase]subtitles=${escapeSubtitlesPath(input.subtitlePath)}${fonts}[vout]`);
+    const fonts = input.fontDirectory ? `:fontsdir=${escapeSubtitlesFilterPath(input.fontDirectory)}` : "";
+    filters.push(`[vbase]subtitles=${escapeSubtitlesFilterPath(input.subtitlePath)}${fonts}[vout]`);
   }
 
   return {
