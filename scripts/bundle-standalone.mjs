@@ -2,6 +2,7 @@
 // copy migration SQL, and replace the better-sqlite3 copy inside standalone with the Electron ABI prebuilt binary.
 import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from "fs";
 import { execSync } from "child_process";
+import { createHash } from "node:crypto";
 import { createRequire } from "module";
 import { isAbsolute, join, relative, sep } from "path";
 
@@ -54,6 +55,13 @@ for (const junk of [".git", ".github", "data", "docs", "tasks", "release", "inte
 await rebuildBetterSqlite3ForElectron();
 
 async function rebuildBetterSqlite3ForElectron() {
+  // A traced dependency can be a hardlink/junction to project-root node_modules.
+  // Fingerprint the host Node ABI binary before the Electron-only staging work and
+  // fail packaging if any replacement unexpectedly mutates the test/build binary.
+  const hostNodeBinary = join(root, "node_modules", "better-sqlite3", "build", "Release", "better_sqlite3.node");
+  if (!existsSync(hostNodeBinary)) throw new Error("Node ABI better-sqlite3 missing before Electron bundle");
+  const digestHostNative = () => createHash("sha256").update(readFileSync(hostNodeBinary)).digest("hex");
+  const hostDigestBefore = digestHostNative();
   // Flat (hoisted) layout: better-sqlite3 lives directly at node_modules/better-sqlite3.
   // Fallback keeps the legacy .pnpm store path in case a build ever runs without node-linker=hoisted.
   let bsDir = join(standalone, "node_modules", "better-sqlite3");
@@ -160,6 +168,9 @@ async function rebuildBetterSqlite3ForElectron() {
       }
       const target = join(bsTrace, "build", "Release", "better_sqlite3.node");
       if (!existsSync(target)) continue;
+      // Next may trace the binary itself as a symlink even after directory links
+      // have been detached. Copy that file privately before replacing it.
+      detachTraceLink(target);
       // Reject escaping file symlinks rather than touching arbitrary source paths.
       // A genuine traced file must now resolve to an independent standalone path.
       const real = realpathSync(target);
@@ -180,6 +191,9 @@ async function rebuildBetterSqlite3ForElectron() {
     // 副本必须存在且被替换：Next 16 的 standalone 一定会为 serverExternalPackages 生成这份拷贝，
     // 找不到多半意味着目录结构变了/扫描失效，直接中止打包，绝不再发 DB 路由必挂的包（issue #12）。
     throw new Error(`未在 ${dotNextNM} 找到 better-sqlite3 副本，无法确认 Electron ABI 替换完整，打包中止`);
+  }
+  if (digestHostNative() !== hostDigestBefore) {
+    throw new Error("Electron ABI packaging modified project-root Node ABI better-sqlite3 binary");
   }
   console.log(`✓ standalone better-sqlite3 已切到 Electron ABI（含 ${replaced.length} 份 .next 内副本），打包 App 的 DB 路由可用`);
   for (const p of replaced) console.log(`  ↳ 已替换副本: ${p}`);
