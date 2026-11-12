@@ -578,7 +578,7 @@ export default function StartPage() {
                   className="cf-input"
                   value={link}
                   onChange={(e) => setLink(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && canStart && !busy) runGeneration(); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && canStart && !busy) onStart(); }}
                   placeholder={t("linkPlaceholder")}
                 />
                 <div className="cf-ds" style={{ marginTop: 8 }}>{t("linkHint")}</div>
