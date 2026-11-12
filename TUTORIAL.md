@@ -1,4 +1,4 @@
-<p align="right"><a href="TUTORIAL.en.md">English</a> · <strong>中文</strong></p>
+> **上游历史教程 — 不适用于本分支。** Windows-local / DeepSeek-only fork 已移除 Docker、MCP、CLI、agent skills、Trending Radar、无商品主题成片和其他 LLM/Ollama/Atlas LLM 接入。请以 [README.md](README.md) 为准；下文仅保留上游历史资料。\n\n<p align="right"><a href="TUTORIAL.en.md">English</a> · <strong>中文</strong></p>
 
 # ClipForge 使用教程（小白版 · 每一步都写清楚）
 

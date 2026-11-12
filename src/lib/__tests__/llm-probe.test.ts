@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from "vitest";
 import { probeLLMEndpoint } from "@/lib/llm-probe";
 import { listModels } from "@/lib/llm-models";

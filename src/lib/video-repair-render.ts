@@ -63,7 +63,7 @@ export function buildVideoRepairInvocation(input: {
     "-nostdin", "-v", "error", "-y",
     "-i", input.sourcePath,
     "-i", input.replacementPath,
-    "-filter_complex_script", filterFile,
+    "-/filter_complex", filterFile,
     "-map", "[vout]",
     ...(input.sourceHasAudio ? ["-map", "0:a:0"] : []),
     "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",

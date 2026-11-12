@@ -151,7 +151,7 @@ export async function renderTranscriptEdit(input: RenderTranscriptEditInput): Pr
     duration,
   });
   await writeFile(filterPath, invocation.filterComplex, "utf8");
-  const args = [...invocation.inputArgs, "-filter_complex_script", filterPath, ...invocation.outputArgs];
+  const args = [...invocation.inputArgs, "-/filter_complex", filterPath, ...invocation.outputArgs];
   try {
     await withComposeSlot(() => {
       input.signal?.throwIfAborted();

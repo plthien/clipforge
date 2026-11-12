@@ -1,4 +1,4 @@
-<p align="right"><strong>English</strong> · <a href="TUTORIAL.md">中文</a></p>
+> **Legacy upstream tutorial — not applicable to this fork.** Windows-local / DeepSeek-only removed Docker, MCP, CLI, agent skills, Trending Radar, product-free topics and other LLM/Ollama/Atlas LLM setup. Follow [README.en.md](README.en.md); the remaining content is upstream historical reference.\n\n<p align="right"><strong>English</strong> · <a href="TUTORIAL.md">中文</a></p>
 
 # ClipForge User Tutorial (beginner edition — every step spelled out)
 

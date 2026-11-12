@@ -14,7 +14,21 @@ it("serializes concurrent startup migrations against a fresh database (#37)", as
   const workerSource = `
     const { parentPort, workerData } = require('node:worker_threads');
     const Database = require('better-sqlite3');
-    const { initializeSqlite } = require(workerData.helper);
+    const { readFileSync } = require('node:fs');
+    const { dirname } = require('node:path');
+    const Module = require('node:module');
+    const ts = require('typescript');
+    // Vitest transpilation does not extend into eval workers; compile real source.
+    const text = readFileSync(workerData.helper, 'utf8');
+    const js = ts.transpileModule(text, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      fileName: workerData.helper,
+    }).outputText;
+    const helper = new Module(workerData.helper, module);
+    helper.filename = workerData.helper;
+    helper.paths = Module._nodeModulePaths(dirname(workerData.helper));
+    helper._compile(js, workerData.helper);
+    const { initializeSqlite } = helper.exports;
     const db = new Database(workerData.file);
     initializeSqlite(db, workerData.migrations);
     parentPort.postMessage(db.prepare('SELECT count(*) AS n FROM projects').get());

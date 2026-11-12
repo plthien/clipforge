@@ -37,7 +37,7 @@ describe("真实 FFmpeg 构图与导出", () => {
   let source: string;
   beforeAll(async () => {
     directory = await mkdtemp(join(tmpdir(), "clipforge-framing-"));
-    source = join(directory, 'source " with spaces.mp4');
+    source = join(directory, "source with spaces.mp4");
     await run(ffmpegBin(), ["-v", "error", "-y", "-f", "lavfi", "-i", "color=red:s=320x180:r=24:d=2",
       "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-vf", "drawbox=x=160:y=0:w=160:h=180:color=blue:t=fill",
       "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-metadata", "comment=clipforge-test-marker", "-shortest", source]);

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDataDir } from "@/lib/paths";
-import { readFile } from "fs/promises";
-import { join } from "path";
+import { getUploadsDir } from "@/lib/paths";
+import { resolveUploadFilePath } from "@/lib/remote-image";
+import { readFile, realpath } from "node:fs/promises";
+import { isAbsolute, relative, sep } from "node:path";
 import { generateScript, analyzeProduct } from "@/lib/script-engine/generator";
 import { styleNameMap, type ScriptStyleType } from "@/lib/script-engine/prompts";
 import { hookPatternName, HOOK_PATTERNS } from "@/lib/script-engine/hook-patterns";
@@ -21,35 +22,45 @@ const VALID_SCRIPT_STYLE = new Set([
   "custom",
 ]);
 
-/** Convert a local image path to a base64 data URI for use with LLM vision models */
+/** Convert an approved upload image to a data URI without permitting filesystem escape. */
 async function imagePathToBase64(imagePath: string): Promise<string> {
-  // Already a full URL or base64 data URI, return as-is
-  if (imagePath.startsWith("http") || imagePath.startsWith("data:")) {
+  if (/^https?:\/\//i.test(imagePath)) {
+    if (!["http:", "https:"].includes(new URL(imagePath).protocol))
+      throw new Error("INVALID_PRODUCT_IMAGE_REF");
     return imagePath;
   }
+  if (/^data:image\//i.test(imagePath)) return imagePath;
+  if (!imagePath.startsWith("/api/files/") || /[?#]/.test(imagePath))
+    throw new Error("INVALID_PRODUCT_IMAGE_REF");
 
-  // Local API path e.g. /api/files/projectId/filename.png
-  // Extract the actual file path: data/uploads/projectId/filename.png
-  const match = imagePath.match(/\/api\/files\/(.+)/);
-  if (!match) return imagePath;
-
-  const relativePath = match[1];
-  const filePath = join(getDataDir(), "uploads", relativePath);
+  // Decode before path checks to reject percent-encoded traversal and malformed URLs.
+  let decoded: string;
+  try { decoded = decodeURIComponent(imagePath); }
+  catch { throw new Error("INVALID_PRODUCT_IMAGE_REF"); }
+  const tail = decoded.slice("/api/files/".length);
+  if (decoded.includes("\\") || decoded.includes("\0") ||
+      tail.split("/").some((part) => part === "." || part === ".."))
+    throw new Error("INVALID_PRODUCT_IMAGE_REF");
+  const filePath = resolveUploadFilePath(decoded);
+  if (!filePath) throw new Error("INVALID_PRODUCT_IMAGE_REF");
 
   try {
-    const buffer = await readFile(filePath);
-    const base64 = buffer.toString("base64");
-    // Infer MIME type from file extension
-    const ext = filePath.split(".").pop()?.toLowerCase() || "png";
-    const mimeMap: Record<string, string> = {
+    // realpath dereferences symlinks/junctions (including Windows reparse points).
+    const [root, realFile] = await Promise.all([realpath(getUploadsDir()), realpath(filePath)]);
+    const within = relative(root, realFile);
+    if (!within || within === ".." || within.startsWith(".." + sep) || isAbsolute(within))
+      throw new Error("INVALID_PRODUCT_IMAGE_REF");
+    const buffer = await readFile(realFile);
+    const ext = realFile.split(".").pop()?.toLowerCase() || "png";
+    const mimes: Record<string, string> = {
       jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
       webp: "image/webp", gif: "image/gif", svg: "image/svg+xml",
     };
-    const mime = mimeMap[ext] || "image/png";
-    return `data:${mime};base64,${base64}`;
-  } catch {
-    console.warn(`无法读取图片文件: ${filePath}`);
-    return imagePath;
+    return `data:${mimes[ext] || "image/png"};base64,${buffer.toString("base64")}`;
+  } catch (error) {
+    if (error instanceof Error && error.message === "INVALID_PRODUCT_IMAGE_REF") throw error;
+    // Avoid disclosing paths and sensitive filesystem details to logs/clients.
+    throw new Error("LOCAL_PRODUCT_IMAGE_UNAVAILABLE");
   }
 }
 

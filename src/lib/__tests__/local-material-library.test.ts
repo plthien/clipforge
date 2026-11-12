@@ -94,7 +94,15 @@ describe("local material lifecycle", () => {
     await writeFile(join(directory, "movie.mp4.last.jpg"), "frame");
     await writeFile(join(directory, ".upload.part"), "partial");
     await mkdir(join(directory, "folder.png"));
-    await symlink(join(directory, "legacy.png"), join(directory, "linked.png"));
+    try {
+      await symlink(join(directory, "legacy.png"), join(directory, "linked.png"));
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform !== "win32" || (code !== "EPERM" && code !== "EACCES")) throw error;
+      // Windows without Developer Mode cannot create test symlinks. Keep all
+      // regular file, directory, temp-file and extracted-frame assertions.
+      console.warn("Windows symlink permission denied: link filtering not exercised");
+    }
     const rows = await listLocalMaterials(directory);
     expect(rows.map((r) => r.name)).toEqual(["legacy.png"]);
     expect(rows[0]).toMatchObject({

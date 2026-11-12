@@ -23,8 +23,8 @@ describe("paths 运行时路径解析", () => {
   it("注入 APP_DATA_DIR 时所有可写路径都迁过去（Electron 打包关键）", () => {
     process.env.APP_DATA_DIR = "/tmp/daihuo-userdata";
     expect(getDataDir()).toBe("/tmp/daihuo-userdata");
-    expect(getUploadsDir()).toBe("/tmp/daihuo-userdata/uploads");
-    expect(getOutputDir()).toBe("/tmp/daihuo-userdata/output");
+    expect(getUploadsDir()).toBe(join("/tmp/daihuo-userdata", "uploads"));
+    expect(getOutputDir()).toBe(join("/tmp/daihuo-userdata", "output"));
   });
 
   it("迁移目录可单独注入（只读资源与可写数据分离）", () => {
