@@ -258,6 +258,8 @@ export default function SettingsPage() {
     tts,
     glabsPromptMode,
     setGlabsPromptMode,
+    glabsVideoResolution,
+    setGlabsVideoResolution,
     defaultResolution,
     spendCapUsd,
     setSpendCapUsd,
@@ -563,6 +565,15 @@ export default function SettingsPage() {
                               <SelectItem value="auto">auto — {t("glabsPromptModeAuto")}</SelectItem>
                             </SelectContent>
                           </Select>
+                          <Label className="text-xs">{t("glabsVideoResolutionLabel")}</Label>
+                          <Select value={glabsVideoResolution} onValueChange={(value) => setGlabsVideoResolution(value === "480p" ? "480p" : "720p")}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="480p">480p · Meta only</SelectItem>
+                              <SelectItem value="720p">720p · Meta only</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">{t("glabsVideoResolutionHint")}</p>
                         </div>
                       ) : (
                       <details className="mt-3">

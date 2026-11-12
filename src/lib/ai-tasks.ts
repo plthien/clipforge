@@ -11,7 +11,7 @@
 
 import { getDb } from "@/lib/db";
 import { aiTasks } from "@/lib/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { GenerationControlSummary } from "@/lib/video-repair-plan";
 
 export type AiTaskStatus = "submitted" | "processing" | "completed" | "failed" | "unknown";
@@ -99,6 +99,15 @@ export async function updateAiTaskByProviderTaskId(
   } catch (error) {
     console.error("ai_tasks 更新失败:", error);
   }
+}
+
+/** Resolve persisted workflow identity server-side; clients may not substitute project/script ids. */
+export async function findAiTaskByProviderTaskId(provider: string, taskId: string) {
+  const db = getDb();
+  const [row] = await db.select().from(aiTasks)
+    .where(and(eq(aiTasks.provider, provider), eq(aiTasks.taskId, taskId)))
+    .orderBy(desc(aiTasks.createdAt)).limit(1);
+  return row ?? null;
 }
 
 /** List a project's tasks, optionally only the ones still needing attention */

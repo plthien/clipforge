@@ -93,7 +93,7 @@ export default function AssetsPage() {
   const tm = useT("materials");
   const locale = useLocale();
   const { id } = useParams<{ id: string }>();
-  const { providers, defaultImageModel, defaultVideoModel, customModels, imageParams, videoParams, glabsPromptMode, llm, motionIntensity, setMotionIntensity, motionRealism, setMotionRealism, chainMode, setChainMode, visualLook, setVisualLook } = useSettingsStore();
+  const { providers, defaultImageModel, defaultVideoModel, customModels, imageParams, videoParams, glabsPromptMode, glabsVideoResolution, llm, motionIntensity, setMotionIntensity, motionRealism, setMotionRealism, chainMode, setChainMode, visualLook, setVisualLook } = useSettingsStore();
   // beginner/director split: simple mode hides the director panel, the storyboard-grid button
   // and per-shot camera tooling — beginners see shots + generate, nothing else
   const spendCapUsd = useSettingsStore((st) => st.spendCapUsd);
@@ -490,12 +490,16 @@ export default function AssetsPage() {
             apiKey: prov.apiKey,
             baseUrl: prov.baseUrl,
             taskId: task.taskId,
+            projectId: id,
             wait: true,
           }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || t("taskResumeFailed"));
-        if (data.status === "completed" && data.imageUrls?.[0] && task.shotId != null) {
+        if (data.status === "completed" && data.workflow === "storyboard-grid") {
+          await reloadAssets();
+          setTaskMsg(t("taskResumeDone"));
+        } else if (data.status === "completed" && data.imageUrls?.[0] && task.shotId != null) {
           const saveRes = await fetch("/api/project/" + id + "/assets", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ shotId: task.shotId, type: "ai_generate",
@@ -668,15 +672,13 @@ export default function AssetsPage() {
             throw new Error("Meta cannot accept native audio or generic image/video/audio references for this action.");
           if (videoOptions.fps != null || videoOptions.motionStrength != null || videoOptions.seed != null || videoOptions.openaiSize != null)
             throw new Error("Meta does not support FPS, motion strength, seed or custom size. Remove these settings.");
-          if (videoParams.resolution !== "720p")
-            throw new Error("Meta supports 480p/720p only; select 720p in Settings.");
           if (videoOptions.negativePrompt) {
             // Explicit, readable prompt-text conversion; there is no negative_prompt API field.
             finalPrompt += " Avoid: " + String(videoOptions.negativePrompt);
             delete videoOptions.negativePrompt;
           }
           delete videoOptions.duration;
-          videoOptions.extra = { resolution: "720p", count: 1 };
+          videoOptions.extra = { resolution: glabsVideoResolution, count: 1 };
         }
         const res = await fetch("/api/ai/video", {
           method: "POST",
@@ -731,7 +733,7 @@ export default function AssetsPage() {
         });
       }
     },
-    [assets, videoModelTarget, id, videoParams, motionIntensity, motionRealism, chainMode, projectCategory, projectCreativeIntent, projectVisualBible, visualLook, productSafe, productImages, presenterLib, presenterSheet, saveVideoAsset, reloadPendingTasks, t, locale]
+    [assets, videoModelTarget, id, videoParams, glabsVideoResolution, motionIntensity, motionRealism, chainMode, projectCategory, projectCreativeIntent, projectVisualBible, visualLook, productSafe, productImages, presenterLib, presenterSheet, saveVideoAsset, reloadPendingTasks, t, locale]
   );
 
   // actually generate a single asset. Returns the saved static keyframe URL (undefined on failure) so
@@ -1304,7 +1306,7 @@ export default function AssetsPage() {
             provider={videoModelTarget.provider}
             supportsAudio={videoModelTarget.supportsAudio}
             duration={videoParams.duration}
-            resolution={videoParams.resolution}
+            resolution={videoModelTarget.provider === "glabs-webhook" ? "720p" : videoParams.resolution}
             aspectRatio={videoParams.aspectRatio}
             chainMode={chainMode}
             audioEnabled={videoModelTarget.supportsAudio === true}
@@ -1372,7 +1374,7 @@ export default function AssetsPage() {
         </div>}
         {(modelTarget?.provider === "glabs-webhook" || videoModelTarget?.provider === "glabs-webhook") && (
           <div role="note" className="mb-4 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
-            {t("glabsLimitNotice")}
+            {t("glabsLimitNotice", { resolution: glabsVideoResolution })}
           </div>
         )}
         <LocalMaterialLibrary key={id} projectId={id} refreshKey={materialLibraryRevision}

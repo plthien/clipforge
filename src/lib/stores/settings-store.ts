@@ -58,6 +58,8 @@ export interface SettingsState {
   tts: TTSSetting;
   // Explicit G-Labs GPT Image 2 prompt handling (direct by default for product fidelity)
   glabsPromptMode: "direct" | "auto";
+  // Meta-only output tier; separate from every provider's generic video resolution.
+  glabsVideoResolution: "480p" | "720p";
   // 默认生图模型
   defaultImageModel: string;
   // 默认生视频模型
@@ -100,6 +102,7 @@ export interface SettingsState {
   setLLM: (llm: LLMSetting) => void;
   setTTS: (tts: TTSSetting) => void;
   setGlabsPromptMode: (mode: "direct" | "auto") => void;
+  setGlabsVideoResolution: (resolution: "480p" | "720p") => void;
   setDefaultImageModel: (model: string) => void;
   setDefaultVideoModel: (model: string) => void;
   setDefaultResolution: (resolution: "720p" | "1080p") => void;
@@ -136,6 +139,7 @@ export function migrateSettings(state: SettingsState): SettingsState {
   return {
     ...state,
     llm: normalizeDeepSeekSetting(state?.llm),
+    glabsVideoResolution: state?.glabsVideoResolution === "480p" ? "480p" : "720p",
     activeProductionProfile: isProductionProfileId(state?.activeProductionProfile)
       ? state.activeProductionProfile : "balanced",
   };
@@ -165,6 +169,7 @@ export const useSettingsStore = create<SettingsState>()(
         speed: 1,
       },
       glabsPromptMode: "direct",
+      glabsVideoResolution: "720p",
       defaultImageModel: "",
       defaultVideoModel: "",
       defaultResolution: "720p",
@@ -195,6 +200,7 @@ export const useSettingsStore = create<SettingsState>()(
       setLLM: (llm) => set({ llm: normalizeDeepSeekSetting(llm) }),
       setTTS: (tts) => set({ tts }),
       setGlabsPromptMode: (mode) => set({ glabsPromptMode: mode === "auto" ? "auto" : "direct" }),
+      setGlabsVideoResolution: (resolution) => set({ glabsVideoResolution: resolution === "480p" ? "480p" : "720p" }),
       setDefaultImageModel: (model) => set({ defaultImageModel: model }),
       setDefaultVideoModel: (model) => set({ defaultVideoModel: model }),
       setDefaultResolution: (resolution) => set({ defaultResolution: resolution }),
@@ -246,7 +252,8 @@ export const useSettingsStore = create<SettingsState>()(
       // v4：补充面向创作目标的生产方案；旧设置迁移到兼顾质量与成本的 balanced。
       // v5：Atlas 一键接入曾把「素材网关」/api/v1 写进 LLM 地址，导致写脚本必 404（issue #24），
       // 迁到 OpenAI 兼容的聊天网关 /v1。
-      version: 6,
+      // v7：G-Labs Meta 清晰度独立于其他 provider 的全局 720p/1080p 设置。
+      version: 7,
       migrate: (persisted) => migrateSettings(persisted as SettingsState),
     }
   )

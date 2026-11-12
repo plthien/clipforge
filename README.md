@@ -99,9 +99,14 @@ PNG/JPEG/WEBP references, ratio whitelist, native output ≈1.57MP, no 4K);
 `meta_muse` is the ClipForge alias for Meta AI video at documented
 `POST /api/meta/generate` (t2v/i2v, optional end image, 480p/720p).
 **Meta does not accept a requested generation duration, generic reference videos,
-or a guaranteed audio option.** ClipForge downloads completed results to its
-own `data/uploads/glabs-webhook`, probes actual video duration/audio, and
-stores task IDs in SQLite before polling. G-Labs task history is ephemeral after
+or a guaranteed audio option.** Its separate Settings selector sends exactly `480p`
+or `720p` without changing other providers' global resolution. ClipForge downloads
+completed results to `data/uploads/glabs-webhook`, validates and atomically copies
+saved project assets under `data/uploads/<projectId>` (preserving the recovery cache),
+extracts video tail frames there, and stores task IDs in SQLite before polling.
+Storyboard Grid tasks retain a versioned script identity and project-local source;
+recovery finalizes deterministic per-shot crops idempotently before marking the task
+complete. G-Labs task history is ephemeral after
 a G-Labs restart; an unknown task is never automatically resubmitted. Paid
 generation has no automatic POST retry. This integration needs real Webhook
 acceptance on the user's Windows PC before production use.

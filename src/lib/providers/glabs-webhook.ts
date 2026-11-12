@@ -110,6 +110,28 @@ async function jsonResponse(response: Response): Promise<Record<string, unknown>
   return payload as Record<string, unknown>;
 }
 
+function normalizedFailureCode(value: unknown): number {
+  const parsed = typeof value === "number" && Number.isInteger(value)
+    ? value
+    : typeof value === "string" && /^(?:0|[1-9][0-9]{0,2})$/.test(value)
+      ? Number(value)
+      : 0;
+  return parsed >= 0 && parsed <= 999 ? parsed : 0;
+}
+
+function safeFailure(code: number): { category: string; message: string } {
+  switch (code) {
+    case 429: return { category: "quota", message: "G-Labs quota or rate limit reached (429). Do not resubmit automatically; check quota before a new paid job." };
+    case 401: return { category: "authentication", message: "G-Labs authentication failed (401). Check the Webhook API key." };
+    case 403: return { category: "permission", message: "G-Labs permission denied (403). Check MAX-tier and account eligibility." };
+    case 400: return { category: "invalid-request", message: "G-Labs rejected the generation request (400). Review supported inputs before submitting another job." };
+    case 500: return { category: "server", message: "G-Labs generation failed on the local service (500). Inspect G-Labs safely; no automatic paid retry was made." };
+    default: return { category: "unknown", message: code === 0
+      ? "G-Labs generation failed with no classified error code. Inspect the local application without exposing account details."
+      : `G-Labs generation failed with code ${code}. Inspect the local application; no automatic paid retry was made.` };
+  }
+}
+
 export class GlabsWebhookProvider extends BaseProvider {
   readonly name = PROVIDER;
   readonly displayName = "G-Labs Webhook";
@@ -322,12 +344,17 @@ export class GlabsWebhookProvider extends BaseProvider {
     const mapping: Record<string, TaskStatus["status"]> = { pending: "pending", running: "processing", completed: "completed", failed: "failed" };
     const status = typeof data.status === "string" ? mapping[data.status] : undefined;
     if (!status) return fail("G-Labs trả trạng thái không xác định", "GLABS_BAD_RESPONSE");
-    if (status === "failed") return {
-      taskId, status, error: "G-Labs generation failed. Check the G-Labs application and account eligibility.",
-      errorCode: "TASK_FAILED",
-      extra: { upstreamErrorCode: typeof data.error_code === "string"
-        ? data.error_code.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) : "UNKNOWN" },
-    };
+    if (status === "failed") {
+      const upstreamErrorCode = normalizedFailureCode(data.error_code);
+      const failure = safeFailure(upstreamErrorCode);
+      return {
+        taskId, status, error: failure.message,
+        // Keep the unified terminal classification consumed by waitForTask/routes.
+        errorCode: "TASK_FAILED",
+        // Never include error_detail: it may contain an account email or private data.
+        extra: { upstreamErrorCode, upstreamErrorCategory: failure.category },
+      };
+    }
     if (status !== "completed") return { taskId, status };
     if (!Array.isArray(data.results) || !data.results.length || !data.results.every((r) => typeof r === "string") || data.results.length > 4)
       return fail("Task G-Labs completed nhưng thiếu danh sách results", "GLABS_BAD_RESPONSE");

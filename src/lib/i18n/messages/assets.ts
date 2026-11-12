@@ -172,7 +172,7 @@ export const assets: NamespaceMessages = {
     lookNone: "默认",
     lookTip: "全局画面风格：统一每个分镜关键帧的光线与色调，并在图生视频时锁住光线不漂移（对之后的生成生效）",
     // 云端付费任务恢复（issue #16：轮询超时/重启后不丢已扣费任务）
-    glabsLimitNotice: "G-Labs Meta: 只支持 480p/720p，生成时长由服务决定；片段时长以实际 ffprobe 为准，时间轴裁剪在下载后完成。无原生音频开关或参考视频。GPT Image 2 输出约 1.57MP，direct 模式，最多 5 张参考图。",
+    glabsLimitNotice: "G-Labs Meta 专用清晰度：{resolution}（仅支持 480p/720p，不受全局 1080p 设置影响）。生成时长由服务决定；片段时长以实际 ffprobe 为准，时间轴裁剪在下载后完成。无原生音频开关或参考视频。GPT Image 2 输出约 1.57MP，最多 5 张参考图。",
     pendingTasksTitle: "有 {n} 个已提交的云端图片/视频任务未取回结果",
     pendingTasksDesc: "任务已在云端创建（可能已计费）。恢复查询即可取回结果，请勿重复提交。",
     btnResumeTask: "恢复查询",
@@ -305,7 +305,7 @@ export const assets: NamespaceMessages = {
     btnGenerate: "Generate",
     motionTip: "Use this image as the first frame to generate a motion shot (image-to-video)",
     // cloud paid-task recovery (issue #16)
-    glabsLimitNotice: "G-Labs Meta: 480p/720p only; duration is NOT configurable and will be measured after download before timeline trimming. No native audio toggle or reference video. GPT Image 2 outputs ≈1.57MP, direct mode, up to five positional reference images.",
+    glabsLimitNotice: "G-Labs Meta-only resolution: {resolution} (480p/720p only; the global 1080p setting does not apply). Duration is measured after download before timeline trimming. No native audio toggle or reference video. GPT Image 2 outputs ≈1.57MP with up to five positional reference images.",
     pendingTasksTitle: "{n} submitted cloud image/video task(s) have unretrieved results",
     pendingTasksDesc: "The task was created in the cloud (billing may have occurred). Resume the query to retrieve the result — do not resubmit.",
     btnResumeTask: "Resume query",
