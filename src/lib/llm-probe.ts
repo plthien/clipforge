@@ -19,7 +19,7 @@
  */
 
 import { explainLLMStatus, isLegacyPollinations, isTokenCapRejection, type LLMMessagePair } from "@/lib/llm-error";
-import { listModels, modelListHint, normalizeChatBase } from "@/lib/llm-models";
+import { listModels, modelListHint } from "@/lib/llm-models";
 import { assertDeepSeekEndpoint, assertDeepSeekModel } from "@/lib/deepseek-policy";
 
 /** Probe completion budget. Large enough that no provider treats it as "cannot produce output". */

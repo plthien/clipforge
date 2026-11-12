@@ -267,7 +267,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ scripts: savedScripts, analysis });
   } catch (error) {
-    console.error("脚本生成失败:", error);
+    // Never log provider errors verbatim: SDK messages may echo URLs or sensitive fields.
+    console.error("Script generation failed:", error instanceof Error ? error.name : "unknown");
     // LLM failures carry an actionable bilingual message (bad key / dead free endpoint / rate limit)
     const { zh, en } = llmErrorPair(error);
     return apiError(

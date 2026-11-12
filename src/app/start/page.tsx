@@ -338,7 +338,7 @@ export default function StartPage() {
 
   const onStart = () => {
     if (!canStart || busy) return;
-    // no LLM configured: expand the Atlas one-click setup panel inline (no navigation, no loss of filled content)
+    // No DeepSeek key configured: offer inline setup without losing the product details.
     if (!llmReady) {
       setNeedKey(true);
       // the panel may be mounting this very tick — defer the scroll until React has committed it to the DOM

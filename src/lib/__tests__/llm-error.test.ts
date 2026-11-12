@@ -80,36 +80,23 @@ describe("freePoolRetryFetch（把免费池 402 翻译成 SDK 认识的 x-should
   });
 });
 
-describe("createLLMClient（重试交给 openai SDK，不自研）", () => {
-  it("免 Key 端点补占位 Key（SDK 要求非空），并放开重试次数", () => {
-    const client = createLLMClient({ baseUrl: NEW_POLLINATIONS, apiKey: "", model: "openai-fast" });
-    expect(client.apiKey).toBe("no-key");
-    expect(client.maxRetries).toBe(3);
+describe("DeepSeek-only SDK client factory", () => {
+  it("uses canonical DeepSeek origin and permitted Flash / Pro models", () => {
+    for (const model of ["deepseek-flash", "deepseek-v4-pro"]) {
+      const client = createLLMClient({ baseUrl: "https://api.deepseek.com/v1/", apiKey: "deepseek-key", model });
+      expect(client.baseURL).toBe("https://api.deepseek.com");
+      expect(client.apiKey).toBe("deepseek-key");
+    }
   });
-
-  // 402 只有在「匿名共享池这一秒被抽干」时才值得重试。带上真 Key 之后，Pollinations 的 402 含义
-  // 变成「这把 Key 今天的额度用完了」——明天才恢复，重试只会让用户白等 15 秒还是同一句报错。
-  // 用行为断言而非对象身份：装没装钩子不重要，重试与否才是用户能感知的事。
-  it("只有匿名 Pollinations 会重试 402：带 Key 的 402 是当天额度耗尽，不该白等", async () => {
-    const hits = async (apiKey: string) => {
-      let calls = 0;
-      const server = createServer((_req, res) => {
-        calls++;
-        res.writeHead(402, { "content-type": "application/json", "retry-after-ms": "5" });
-        res.end(JSON.stringify({ error: "402 Payment Required" }));
-      });
-      await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-      const port = (server.address() as AddressInfo).port;
-      try {
-        const client = createLLMClient({ baseUrl: `http://127.0.0.1:${port}/pollinations.ai/v1`, apiKey, model: "m" });
-        await client.chat.completions.create({ model: "m", messages: [{ role: "user", content: "hi" }] }).catch(() => {});
-        return calls;
-      } finally {
-        server.close();
-      }
-    };
-    expect(await hits("")).toBeGreaterThan(1); // 匿名池：抽干是暂时的，重试
-    expect(await hits("real-key")).toBe(1); // 有 Key：额度明天才回，重试无意义
+  it("blocks third-party endpoint and model before network", () => {
+    for (const baseUrl of ["https://api.atlascloud.ai/v1", "http://127.0.0.1:11434/v1",
+      "https://api.deepseek.com.evil.example", "https://api.deepseek.com@evil.example",
+      "http://api.deepseek.com", "https://api.deepseek.com:8443"]) {
+      expect(() => createLLMClient({ baseUrl, apiKey: "secret", model: "deepseek-flash" }))
+        .toThrow("DEEPSEEK_ONLY_ENDPOINT");
+    }
+    expect(() => createLLMClient({ baseUrl: "https://api.deepseek.com", apiKey: "k", model: "gpt-5" }))
+      .toThrow("DEEPSEEK_ONLY_MODEL");
   });
 });
 
@@ -265,66 +252,37 @@ describe("withLLMErrors（只做错误翻译，不做重试——重试是 SDK �
   });
 });
 
-describe("LLM_PRESETS（预设是新装用户的唯一入口，指向死端点就等于开箱不可用）", () => {
-  it("没有任何预设指向已停用的 text.pollinations.ai", () => {
-    expect(LLM_PRESETS.filter((p) => isLegacyPollinations(p.baseUrl))).toEqual([]);
-  });
-
-  it("Pollinations 预设指向新端点，且不再预填占位 Key（否则 401 会被伪装成已配置）", () => {
-    const p = LLM_PRESETS.find((x) => x.label === "Pollinations");
-    expect(p?.baseUrl).toBe(NEW_POLLINATIONS);
-    expect(p?.apiKey).toBeUndefined();
-  });
-
-  it("只有真正免 Key 的本地 Ollama 才预填占位 Key", () => {
-    expect(LLM_PRESETS.filter((p) => p.apiKey).map((p) => p.label)).toEqual(["Ollama 本地"]);
-  });
-
-  it("每个 tipKey 在中英文案里都存在（设置页是客户端渲染，缺键只会在用户点开时露出）", () => {
-    for (const p of LLM_PRESETS) {
-      if (!p.tipKey) continue;
-      expect(settings.zh, `zh:${p.tipKey}`).toHaveProperty(p.tipKey);
-      expect(settings.en, `en:${p.tipKey}`).toHaveProperty(p.tipKey);
-    }
-  });
-
-  it("每个预设都填了 baseUrl 和模型名（缺一个都会在生成时才炸）", () => {
-    for (const p of LLM_PRESETS) {
-      expect(p.baseUrl, p.label).toMatch(/^https?:\/\//);
-      expect(p.model.length, p.label).toBeGreaterThan(0);
-    }
-  });
-});
-
-describe("migrateSettings v2（老用户本地存着已停用的 Pollinations 地址，升级即自愈）", () => {
+describe("DeepSeek-only presets and migration", () => {
   const build = (llm: Partial<SettingsState["llm"]>): SettingsState =>
     ({ llm: { provider: "", baseUrl: "", apiKey: "", model: "", ...llm } }) as SettingsState;
 
-  it("旧免 Key 地址 → 新端点，并清掉占位 Key（占位值会把未配置伪装成已配置）", () => {
-    const out = migrateSettings(build({ baseUrl: LEGACY, apiKey: "pollinations", model: "openai-fast" }));
-    expect(out.llm.baseUrl).toBe(NEW_POLLINATIONS);
-    expect(out.llm.apiKey).toBe("");
-    expect(out.llm.model).toBe("openai-fast");
+  it("shows only the verified DeepSeek default", () => {
+    expect(LLM_PRESETS).toHaveLength(1);
+    expect(LLM_PRESETS[0]).toMatchObject({
+      label: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-flash",
+    });
+    expect(LLM_PRESETS[0].apiKey).toBeUndefined();
+    expect(settings.en.presetDeepseekTip).toBeTruthy();
   });
 
-  it("用户自己填过的真 Key 不清空", () => {
-    const out = migrateSettings(build({ baseUrl: LEGACY, apiKey: "my-real-key", model: "openai-fast" }));
-    expect(out.llm.baseUrl).toBe(NEW_POLLINATIONS);
-    expect(out.llm.apiKey).toBe("my-real-key");
+  it("never forwards credentials from Atlas, OpenAI, or Ollama", () => {
+    for (const baseUrl of ["https://api.atlascloud.ai/v1", "https://api.openai.com/v1",
+      "http://127.0.0.1:11434/v1"]) {
+      const out = migrateSettings(build({ baseUrl, apiKey: "OLD_SECRET", model: "gpt-4o" }));
+      expect(out.llm).toMatchObject({ provider: "DeepSeek", baseUrl: "https://api.deepseek.com",
+        apiKey: "", model: "deepseek-flash", visionModel: "deepseek-flash" });
+    }
   });
 
-  it("其他厂商配置不受影响，v1 的失效模型名清洗仍然生效", () => {
-    const untouched = migrateSettings(build({ baseUrl: "https://api.openai.com/v1", apiKey: "k", model: "gpt-5.4" }));
-    expect(untouched.llm.baseUrl).toBe("https://api.openai.com/v1");
-    const v1 = migrateSettings(build({ baseUrl: "https://api.deepseek.com", apiKey: "k", model: "deepseek-v3.2" }));
-    expect(v1.llm.model).toBe("deepseek-v4-flash");
-  });
-
-  it("Atlas 旧默认 v3.2（思考文本弄脏 JSON）→ V4 Pro；用户自选的其他模型不动", () => {
-    const migrated = migrateSettings(build({ baseUrl: "https://api.atlascloud.ai/v1", apiKey: "k", model: "deepseek-ai/deepseek-v3.2" }));
-    expect(migrated.llm.model).toBe("deepseek-ai/deepseek-v4-pro");
-    const userPicked = migrateSettings(build({ baseUrl: "https://api.atlascloud.ai/v1", apiKey: "k", model: "zai-org/glm-5.2" }));
-    expect(userPicked.llm.model).toBe("zai-org/glm-5.2");
+  it("preserves actual DeepSeek key, migrates obsolete names without touching media settings", () => {
+    const providers = { "atlas-cloud": { enabled: true, apiKey: "MEDIA_KEY" } };
+    const state = { ...build({ baseUrl: "https://api.deepseek.com", apiKey: "DEEPSEEK_KEY", model: "deepseek-v4-flash" }), providers };
+    const output = migrateSettings(state as SettingsState);
+    expect(output.llm.apiKey).toBe("DEEPSEEK_KEY");
+    expect(output.llm.model).toBe("deepseek-flash");
+    expect(output.providers).toEqual(providers);
+    expect(migrateSettings(build({ baseUrl: "https://api.deepseek.com/v1", apiKey: "DS", model: "deepseek-v4-pro" })).llm.model)
+      .toBe("deepseek-v4-pro");
   });
 });
 
