@@ -104,7 +104,8 @@ export async function analyzeVisualMedia(input: {
   config: LLMConfig;
   sampleContext?: string;
 }): Promise<MediaAnalysisResult> {
-  const model = input.config.visionModel || input.config.model;
+  // DeepSeek V4 Pro is text-only: always analyze visual content through Flash.
+  const model = "deepseek-flash";
   const client = createLLMClient({ ...input.config, model });
   const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
     { type: "text", text: analysisPrompt(input.mediaType, input.locale, input.sampleContext) },

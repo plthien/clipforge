@@ -1,3 +1,9 @@
+> **Fork: Windows-local / DeepSeek-only (R1).** All LLM text/script/vision calls are restricted to the official DeepSeek endpoint using `deepseek-flash` (vision) or `deepseek-v4-pro` (text-only). Image/video generation retains the separate existing media providers. MCP, CLI, agent skills, Docker publishing, Trending Radar and product-free topic creation have been removed from this fork. Historical descriptions below document upstream behavior and may refer to removed features; they are **not supported in this branch**.
+>
+> **Windows local setup:** Install Node 22+ and pnpm 10; run `pnpm install --frozen-lockfile`, then `pnpm dev` and open `http://127.0.0.1:3000/start`. Or use `pnpm build` + `pnpm start`; Windows Electron builds use `pnpm pack:dir` / `pnpm dist`. In Settings → LLM add a DeepSeek API key and Test Connection. Configure separate media provider keys as needed, then work through Products → Create → Script → Assets → Compose → Export. The server binds to `127.0.0.1` by default. **Existing local settings still store API keys in plaintext**; do not share or commit them.
+>
+> **Validation:** `pnpm lint`, `pnpm test`, `pnpm build`, `pnpm bundle:standalone`, and a Windows Electron smoke check in an isolated temp profile: `pnpm exec electron scripts/smoke-desktop.cjs C:\\Temp\\clipforge-r1-smoke write`. Existing databases, LICENSE and NOTICE remain intact.
+
 <p align="center"><img src="docs/banner.en.png" alt="ClipForge — open-source AI e-commerce short-video generator: turn one product photo into a TikTok Shop / Reels / Shorts / Douyin ad that sells" width="820"/></p>
 
 # ClipForge — Open-source AI shopping-video maker ｜ One product photo, an auto-generated video that sells

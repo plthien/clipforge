@@ -18,7 +18,7 @@
  */
 
 import OpenAI, { APIConnectionError, APIConnectionTimeoutError } from "openai";
-import { listModels, modelListHint, normalizeChatBase } from "@/lib/llm-models";
+import { listModels, modelListHint } from "@/lib/llm-models";
 import { assertDeepSeekConfig } from "@/lib/deepseek-policy";
 
 /** Endpoint + model a call was aimed at (used to tailor the hint). */

@@ -3,8 +3,8 @@
 /**
  * New "act first, configure later" landing page (dark studio direction).
  * Lives as an independent route /start, leaving the homepage (currently being rewritten for i18n) untouched.
- * Users land and act immediately: upload a product image or describe a topic → kick off generation right away;
- * only prompted to configure a Key when AI is actually needed (Atlas one-click recommended).
+ * Users land and act immediately: upload a product image or import a product URL.
+ * Only DeepSeek text credentials are requested when script generation starts.
  */
 
 import { randomUUID } from "@/lib/uuid";
@@ -74,7 +74,7 @@ export default function StartPage() {
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [recent, setRecent] = useState<RecentProject[]>([]);
-  // daily-persona picker state (persisted per device)
+  // First-visit local guide state.
   // first-visit guide card (dismiss persists per device; read after mount to keep SSR stable)
   const [showGuide, setShowGuide] = useState(false);
   useEffect(() => {
@@ -207,7 +207,7 @@ export default function StartPage() {
     ? /^https?:\/\/.+/i.test(link.trim())
     : images.length >= 1 && productName.trim().length > 0;
 
-  // read LLM config live from the store: after one-click setup the newly written Key is immediately available in the same tick, avoiding stale closure values
+  // Read DeepSeek config live: the inline key connection writes it before generation.
   const llmConfig = () => {
     const l = useSettingsStore.getState().llm;
     return { baseUrl: l.baseUrl, apiKey: l.apiKey, model: l.model, visionModel: l.visionModel };
@@ -474,33 +474,6 @@ export default function StartPage() {
         .cf-guide-step{display:flex;align-items:baseline;gap:9px;font-size:13px;color:var(--dim);line-height:1.55}
         .cf-guide-step b{flex:none;width:18px;height:18px;border-radius:999px;background:rgba(139,92,246,.18);color:var(--teal);font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;transform:translateY(2px)}
         .cf-guide-foot{margin-top:10px;font-size:12px;color:var(--muted)}
-        .cf-trends{max-width:620px;margin:26px auto 0;text-align:left;background:var(--surface);border:1px solid var(--bd);border-radius:16px;padding:14px 16px}
-        .cf-trends-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-        .cf-trends-lbl{font-size:13px;font-weight:600;color:var(--dim);letter-spacing:.02em}
-        .cf-trends-more{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border:1px solid var(--bd);border-radius:999px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer;transition:.18s}
-        .cf-trends-more:hover{color:var(--dim);border-color:var(--bd2)}
-        .cf-trend-list{display:flex;flex-direction:column;margin:0 -8px}
-        .cf-trow{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:9px;transition:.15s}
-        .cf-trow:hover{background:var(--surface2)}
-        .cf-trow .trk{flex:none;width:18px;text-align:center;font-size:12px;font-style:normal;font-weight:700;color:var(--muted)}
-        .cf-trow .trk.hot{color:#FDA4AF}
-        .cf-trow .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;background:none;border:0;color:var(--text);font:inherit;font-size:13.5px;cursor:pointer;padding:0}
-        .cf-trow .ttl:hover{color:var(--teal)}
-        .cf-trow .tv{flex:none;font-size:11px;color:var(--muted)}
-        .cf-trow .tclone{flex:none;font-size:11.5px;color:var(--muted);text-decoration:none;padding:3px 9px;border:1px solid var(--bd);border-radius:999px;transition:.15s}
-        .cf-trow .tclone:hover{color:var(--teal);border-color:rgba(139,92,246,.4)}
-        .cf-trends-src{margin-top:9px;font-size:11.5px;color:var(--muted)}
-        .cf-trends-cats{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px}
-        .cf-cat{padding:4px 10px;border:1px solid transparent;border-radius:999px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer;transition:.18s}
-        .cf-cat:hover{color:var(--dim)}
-        .cf-cat.on{border-color:rgba(139,92,246,.4);background:rgba(139,92,246,.08);color:var(--text)}
-        .cf-daily{display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--bd)}
-        .cf-daily-lbl{font-size:12.5px;font-weight:600;color:var(--dim);flex:none}
-        .cf-daily-input{flex:1;min-width:0;background:rgba(0,0,0,.25);border:1px solid var(--bd);border-radius:9px;color:var(--text);font:inherit;font-size:13px;padding:7px 11px;outline:none;transition:.18s}
-        .cf-daily-input:focus{border-color:rgba(139,92,246,.45)}
-        .cf-daily-btn{padding:7px 14px;border:0;border-radius:9px;background:var(--surface2);color:var(--text);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:inset 0 0 0 1px var(--bd2);transition:.18s;flex:none}
-        .cf-daily-btn:hover{box-shadow:inset 0 0 0 1px rgba(139,92,246,.45)}
-        .cf-daily-msg{margin-top:8px;font-size:12px;color:var(--dim)}
         .cf-examples{margin-top:24px;font-size:13px;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
         .cf-chip{padding:6px 12px;border:1px solid var(--bd);border-radius:999px;background:var(--surface);color:var(--dim);font:inherit;cursor:pointer;transition:.18s}
         .cf-chip:hover{border-color:rgba(139,92,246,.4);color:var(--text)}

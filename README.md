@@ -1,3 +1,9 @@
+> **Fork: Windows Local / DeepSeek-only (R1).** 此分支仅支持 Windows 本机使用：脚本与文本相关 AI 只调用官方 DeepSeek API（`deepseek-flash` / `deepseek-v4-pro`）；`deepseek-flash` 处理图片理解。生成图片/视频仍使用原有媒体服务商（独立于 LLM 配置）。**不再提供 MCP、CLI、agent skills、Docker publishing、Trending Radar 或无商品的主题成片入口。** 下文历史版本说明仅供了解上游设计，涉及已移除入口、模型或安装命令均不适用于本分支。
+>
+> **Windows 本机启动**：安装 Node 22+ 和 pnpm 10 → `pnpm install --frozen-lockfile` → `pnpm dev` → 打开 `http://127.0.0.1:3000/start`（或 `pnpm build` 后 `pnpm start`）。桌面打包运行 `pnpm pack:dir` / `pnpm dist`。进入 Settings → LLM 填官方 DeepSeek Key 并测试连接，图片/视频 Key 在独立 Providers 配置。然后 Products → Create → Script → Assets → Compose → Export。服务默认仅监听 `127.0.0.1`。**API Key 仍保存在本地明文设置文件中**，不要将配置文件分享或提交至 Git。
+>
+> **验收命令**：`pnpm lint`，`pnpm test`，`pnpm build`，`pnpm bundle:standalone`，然后在 Windows 的临时 profile 下执行 `pnpm exec electron scripts/smoke-desktop.cjs C:\\Temp\\clipforge-r1-smoke write`（确保目录为临时目录）。AGPL-3.0-only、LICENSE、NOTICE 和原有数据库 schema được giữ nguyên.
+
 <p align="center"><img src="docs/banner.png" alt="ClipForge — 开源 AI 带货短视频神器，一张商品图自动产出抖音小店/快手/小红书/TikTok Shop 卖货短视频" width="820"/></p>
 
 # ClipForge — 开源 AI 带货短视频神器 ｜ 一张商品图，自动出卖货视频
