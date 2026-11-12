@@ -1,19 +1,16 @@
 /**
  * Script generator
  * Calls an LLM in OpenAI-compatible format to generate e-commerce short-video scripts.
- * Supports custom LLM endpoints, streaming output, and product image analysis.
+ * Supports official DeepSeek script generation, streaming output, and product image analysis.
  */
 
 import OpenAI from "openai";
 import {
   SYSTEM_PROMPT,
   PRODUCT_ANALYSIS_PROMPT,
-  TOPIC_SYSTEM_PROMPT,
   buildUserPrompt,
   buildBatchPrompt,
-  buildTopicBatchPrompt,
   type ScriptGenerationInput,
-  type TopicScriptInput,
 } from "./prompts";
 import type { Shot, ScriptCharacter } from "@/lib/db/schema";
 import { createLLMClient, withLLMErrors, LLMRequestError, jsonModeParams } from "@/lib/llm-error";
@@ -24,13 +21,13 @@ import { stripThinkBlocks } from "@/lib/llm-clean";
 
 /** LLM configuration */
 export interface LLMConfig {
-  /** API base URL (any OpenAI-compatible endpoint) */
+  /** Official DeepSeek API base URL */
   baseUrl: string;
   /** API key */
   apiKey: string;
   /** Text model name */
   model: string;
-  /** Vision model name (used for product image analysis; falls back to model if not specified) */
+  /** Vision model name (only deepseek-flash is permitted) */
   visionModel?: string;
 }
 
@@ -358,41 +355,6 @@ export async function generateScript(input: ScriptInput): Promise<GeneratedScrip
     },
     input.llmConfig,
     (content) => parseScriptResponse(content, input.styleType),
-  );
-}
-
-/** Topic-based script generation input (one-sentence topic + LLM config) */
-export interface TopicScriptGenInput extends TopicScriptInput {
-  llmConfig: LLMConfig;
-  /** Number of variants to generate, defaults to 3 */
-  count?: number;
-}
-
-/**
- * Generate "one-sentence topic" scripts (product-free; each shot includes English search terms for automatic media matching).
- * @param input - Topic + LLM config
- * @returns Array of generated scripts (includes stockKeywords, ready to feed directly into stock-fill for media matching)
- */
-export async function generateTopicScript(input: TopicScriptGenInput): Promise<GeneratedScript[]> {
-  const client = createClient(input.llmConfig);
-  const userPrompt = buildTopicBatchPrompt(input, batchCountFor(input.llmConfig.baseUrl, input.count ?? 3));
-
-  // Topic-based videos have no e-commerce style concept; fall back uniformly to "custom"
-  return completeWithJsonRetry(
-    client,
-    {
-      model: input.llmConfig.model,
-      messages: [
-        { role: "system", content: TOPIC_SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.85,
-      max_tokens: 16000,
-      ...reasoningParams(input.llmConfig.baseUrl),
-      ...jsonModeParams(input.llmConfig.baseUrl),
-    },
-    input.llmConfig,
-    (content) => parseScriptResponse(content, "custom"),
   );
 }
 
