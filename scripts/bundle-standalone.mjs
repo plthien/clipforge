@@ -1,6 +1,6 @@
 // After build, fill in the standalone self-contained assets (next build's standalone omits static/public by default),
 // copy migration SQL, and replace the better-sqlite3 copy inside standalone with the Electron ABI prebuilt binary.
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from "fs";
 import { execSync } from "child_process";
 import { createRequire } from "module";
 import { isAbsolute, join, relative, sep } from "path";
@@ -125,16 +125,46 @@ async function rebuildBetterSqlite3ForElectron() {
   // 会跟随 junction 把 Node ABI 的旧二进制实体化进安装包。所以这里显式进入该目录（readdirSync 天然
   // 穿透 junction），对每个 better-sqlite3* 副本先解析真实路径、删旧文件再拷入 Electron ABI 二进制，
   // 避免经由硬链接把项目根 node_modules 的 Node ABI 版本也改掉（后续本机 next build 还要用）。
+  // Next 16 on Windows may place a directory junction at standalone/.next/node_modules
+  // (or below it) that points to the build's original trace location. Following that
+  // junction to replace the native binary would mutate the Node ABI 127 copy used by
+  // Vitest and next build. Detach the link into a real, private standalone directory
+  // before any replacement. Dereference nested links while copying so electron-builder
+  // receives only independent files (and no links into the project source tree).
+  function detachTraceLink(link) {
+    if (!lstatSync(link).isSymbolicLink()) return;
+    const staged = `${link}.clipforge-private-${process.pid}`;
+    rmSync(staged, { recursive: true, force: true });
+    cpSync(link, staged, { recursive: true, dereference: true });
+    try {
+      unlinkSync(link); // unlink only the junction/symlink, NEVER its target
+      renameSync(staged, link);
+    } catch (error) {
+      // Keep the completed private copy for diagnosis if restoring the link fails.
+      throw new Error(`Cannot detach traced dependency junction at ${link}: ${error.message}`);
+    }
+  }
+
   const replaced = [];
   const dotNextNM = join(standalone, ".next", "node_modules");
   if (existsSync(dotNextNM)) {
+    detachTraceLink(dotNextNM);
     for (const name of readdirSync(dotNextNM)) {
       if (!name.startsWith("better-sqlite3")) continue;
-      const target = join(dotNextNM, name, "build", "Release", "better_sqlite3.node");
+      // Junctions may occur at the module, build or Release directory too.
+      const bsTrace = join(dotNextNM, name);
+      detachTraceLink(bsTrace);
+      for (const nested of ["build", join("build", "Release")]) {
+        const part = join(bsTrace, nested);
+        if (existsSync(part)) detachTraceLink(part);
+      }
+      const target = join(bsTrace, "build", "Release", "better_sqlite3.node");
       if (!existsSync(target)) continue;
+      // Reject escaping file symlinks rather than touching arbitrary source paths.
+      // A genuine traced file must now resolve to an independent standalone path.
       const real = realpathSync(target);
       if (!insideBuild(real)) {
-        throw new Error(`Traced better-sqlite3 binary resolves outside .next: ${target}`);
+        throw new Error(`Traced better-sqlite3 binary still resolves outside .next: ${target}`);
       }
       if (real === realpathSync(node)) {
         // mac：副本目录是指回顶层 node_modules/better-sqlite3 的符号链接，顶层刚换过 = 这份已是 Electron ABI
