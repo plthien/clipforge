@@ -2,6 +2,7 @@ import type OpenAI from "openai";
 import type { LLMConfig } from "@/lib/script-engine/generator";
 import { extractJSON } from "@/lib/script-engine/generator";
 import { createLLMClient, jsonModeParams, withLLMErrors } from "@/lib/llm-error";
+import { DEEPSEEK_VISION_MODEL } from "@/lib/deepseek-policy";
 
 export interface MediaAnalysisResult {
   mediaType: "image" | "video";
@@ -104,8 +105,8 @@ export async function analyzeVisualMedia(input: {
   config: LLMConfig;
   sampleContext?: string;
 }): Promise<MediaAnalysisResult> {
-  // DeepSeek V4 Pro is text-only: always analyze visual content through Flash.
-  const model = "deepseek-flash";
+  // The text model may be Pro; media analysis always uses Flash.
+  const model = DEEPSEEK_VISION_MODEL;
   const client = createLLMClient({ ...input.config, model });
   const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
     { type: "text", text: analysisPrompt(input.mediaType, input.locale, input.sampleContext) },

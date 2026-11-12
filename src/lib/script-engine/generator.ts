@@ -17,6 +17,7 @@ import {
 } from "./prompts";
 import type { Shot, ScriptCharacter } from "@/lib/db/schema";
 import { createLLMClient, withLLMErrors, LLMRequestError, jsonModeParams } from "@/lib/llm-error";
+import { DEEPSEEK_VISION_MODEL } from "@/lib/deepseek-policy";
 import { stripThinkBlocks } from "@/lib/llm-clean";
 
 // ==================== Type definitions ====================
@@ -547,9 +548,9 @@ export async function analyzeProduct(
   imageUrls: string[],
   config: LLMConfig,
 ): Promise<string> {
-  const client = createClient(config);
-  // DeepSeek V4 Pro is text-only. Product photos always use vision-enabled Flash.
-  const model = config.visionModel || "deepseek-flash";
+  // The text model may be V4 Pro, but every image-bearing request must use Flash.
+  const model = DEEPSEEK_VISION_MODEL;
+  const client = createClient({ ...config, model });
 
   // Build message content with images
   const imageContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = imageUrls.map(

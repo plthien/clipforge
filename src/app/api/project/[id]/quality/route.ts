@@ -13,6 +13,7 @@ import {
 } from "@/lib/generation-quality";
 import { evaluateGenerationQuality } from "@/lib/generation-quality-evaluator";
 import { llmErrorPair } from "@/lib/llm-error";
+import { assertDeepSeekConfig, DEEPSEEK_VISION_MODEL } from "@/lib/deepseek-policy";
 import { probeMedia } from "@/lib/media-probe";
 import { resolveUploadFilePath, toRemoteUsableImage } from "@/lib/remote-image";
 import type { LLMConfig } from "@/lib/script-engine/generator";
@@ -126,6 +127,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const config = parseConfig(body.llmConfig);
   if (!assetId) return apiError(req, "请选择要评估的素材", "Choose an asset to evaluate", 400);
   if (!config) return apiError(req, "请先配置可看图的视觉模型", "Configure a vision-capable model first", 400);
+  // Reject forged LLM configs before reading files or touching the database.
+  try {
+    assertDeepSeekConfig(config);
+  } catch {
+    return apiError(req, "仅允许官方 DeepSeek 模型及地址，视觉模型必须是 Flash", "Only official DeepSeek endpoint/models are allowed; vision requires Flash", 400);
+  }
 
   const db = getDb();
   const [[project], [asset], scriptRows, selectedAssets] = await Promise.all([
@@ -209,12 +216,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       contract,
       report,
       disposition,
-      evaluatorModel: config.visionModel || config.model,
+      evaluatorModel: DEEPSEEK_VISION_MODEL,
       verdict: report.verdict,
     }).returning();
     return NextResponse.json(publicReview(saved));
   } catch (error) {
-    console.error("Generation quality evaluation failed:", error);
+    console.error("Generation quality evaluation failed:", error instanceof Error ? error.name : "unknown");
     const pair = llmErrorPair(error);
     return NextResponse.json({ error: errText(req, `质量评估失败：${pair.zh}`, `Quality evaluation failed: ${pair.en}`) }, { status: 500 });
   } finally {
