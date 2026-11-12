@@ -56,6 +56,8 @@ export interface SettingsState {
   llm: LLMSetting;
   // TTS 配音配置
   tts: TTSSetting;
+  // Explicit G-Labs GPT Image 2 prompt handling (direct by default for product fidelity)
+  glabsPromptMode: "direct" | "auto";
   // 默认生图模型
   defaultImageModel: string;
   // 默认生视频模型
@@ -97,6 +99,7 @@ export interface SettingsState {
   setProvider: (name: string, setting: ProviderSetting) => void;
   setLLM: (llm: LLMSetting) => void;
   setTTS: (tts: TTSSetting) => void;
+  setGlabsPromptMode: (mode: "direct" | "auto") => void;
   setDefaultImageModel: (model: string) => void;
   setDefaultVideoModel: (model: string) => void;
   setDefaultResolution: (resolution: "720p" | "1080p") => void;
@@ -161,6 +164,7 @@ export const useSettingsStore = create<SettingsState>()(
         voice: "",
         speed: 1,
       },
+      glabsPromptMode: "direct",
       defaultImageModel: "",
       defaultVideoModel: "",
       defaultResolution: "720p",
@@ -190,6 +194,7 @@ export const useSettingsStore = create<SettingsState>()(
         })),
       setLLM: (llm) => set({ llm: normalizeDeepSeekSetting(llm) }),
       setTTS: (tts) => set({ tts }),
+      setGlabsPromptMode: (mode) => set({ glabsPromptMode: mode === "auto" ? "auto" : "direct" }),
       setDefaultImageModel: (model) => set({ defaultImageModel: model }),
       setDefaultVideoModel: (model) => set({ defaultVideoModel: model }),
       setDefaultResolution: (resolution) => set({ defaultResolution: resolution }),

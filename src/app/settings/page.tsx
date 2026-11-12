@@ -256,6 +256,8 @@ export default function SettingsPage() {
     providers,
     llm,
     tts,
+    glabsPromptMode,
+    setGlabsPromptMode,
     defaultResolution,
     spendCapUsd,
     setSpendCapUsd,
@@ -553,6 +555,14 @@ export default function SettingsPage() {
                             }}
                             className="font-mono text-xs" />
                           <p className="text-xs text-amber-500">{t("glabsPrerequisites")}</p>
+                          <Label className="text-xs">{t("glabsPromptModeLabel")}</Label>
+                          <Select value={glabsPromptMode} onValueChange={(mode) => setGlabsPromptMode(mode === "auto" ? "auto" : "direct")}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="direct">direct — {t("glabsPromptModeDirect")}</SelectItem>
+                              <SelectItem value="auto">auto — {t("glabsPromptModeAuto")}</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       ) : (
                       <details className="mt-3">

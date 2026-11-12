@@ -93,7 +93,7 @@ export default function AssetsPage() {
   const tm = useT("materials");
   const locale = useLocale();
   const { id } = useParams<{ id: string }>();
-  const { providers, defaultImageModel, defaultVideoModel, customModels, imageParams, videoParams, llm, motionIntensity, setMotionIntensity, motionRealism, setMotionRealism, chainMode, setChainMode, visualLook, setVisualLook } = useSettingsStore();
+  const { providers, defaultImageModel, defaultVideoModel, customModels, imageParams, videoParams, glabsPromptMode, llm, motionIntensity, setMotionIntensity, motionRealism, setMotionRealism, chainMode, setChainMode, visualLook, setVisualLook } = useSettingsStore();
   // beginner/director split: simple mode hides the director panel, the storyboard-grid button
   // and per-shot camera tooling — beginners see shots + generate, nothing else
   const spendCapUsd = useSettingsStore((st) => st.spendCapUsd);
@@ -818,7 +818,7 @@ export default function AssetsPage() {
             genPrompt += " Avoid: " + String(imageOptions.negativePrompt);
             delete imageOptions.negativePrompt;
           }
-          imageOptions.extra = { quality: "high", prompt_mode: "direct", reasoning: "none", web_search: false };
+          imageOptions.extra = { quality: "high", prompt_mode: glabsPromptMode === "auto" ? "auto" : "direct", reasoning: "none", web_search: false };
         }
         const res = await fetch("/api/ai/image", {
           method: "POST",
@@ -872,7 +872,7 @@ export default function AssetsPage() {
         return undefined;
       }
     },
-    [assets, modelTarget, productImages, productSafe, imageParams, autoMotion, videoModelTarget, projectCreativeIntent, projectVisualBible, visualLook, generateMotion, t]
+    [assets, modelTarget, productImages, productSafe, imageParams, glabsPromptMode, autoMotion, videoModelTarget, projectCreativeIntent, projectVisualBible, visualLook, generateMotion, t]
   );
 
   // storyboard grid: ONE image generation renders every shot as a 3x3 grid cell (person /
