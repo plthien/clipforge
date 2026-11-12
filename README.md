@@ -84,3 +84,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows-r1-accepta
 - 原作者：[xixihhhh/clipforge](https://github.com/xixihhhh/clipforge)；fork：[plthien/clipforge](https://github.com/plthien/clipforge)。该分支不代表上游官方发布。
 - 代码采用 [GNU AGPL-3.0-only](LICENSE)，请同时阅读 [NOTICE](NOTICE) 并遵守上游署名、第三方服务和素材的各自条款。
 - 第三方平台、模型提供商与本仓库无官方隶属关系。
+
+
+### G-Labs Webhook (R2 — local media provider)
+
+Optional provider: **Settings → G-Labs Webhook**. Start the G-Labs desktop application
+and Webhook service, enter its separate `X-API-Key`, and set a **loopback port only**
+(default `http://127.0.0.1:8765`). A G-Labs **MAX** plan and eligible signed-in
+GPT Image 2 / Meta AI accounts are prerequisites. Health checks alone cannot
+verify account eligibility. No OpenAI platform key is used for this provider.
+
+Models: `glabs-gpt-image-2` for text-to-image / image-guided edits (≤5 positional
+PNG/JPEG/WEBP references, ratio whitelist, native output ≈1.57MP, no 4K);
+`meta_muse` is the ClipForge alias for Meta AI video at documented
+`POST /api/meta/generate` (t2v/i2v, optional end image, 480p/720p).
+**Meta does not accept a requested generation duration, generic reference videos,
+or a guaranteed audio option.** ClipForge downloads completed results to its
+own `data/uploads/glabs-webhook`, probes actual video duration/audio, and
+stores task IDs in SQLite before polling. G-Labs task history is ephemeral after
+a G-Labs restart; an unknown task is never automatically resubmitted. Paid
+generation has no automatic POST retry. This integration needs real Webhook
+acceptance on the user's Windows PC before production use.

@@ -495,7 +495,16 @@ export default function AssetsPage() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || t("taskResumeFailed"));
-        if (data.status === "completed" && data.videoUrls?.[0]) {
+        if (data.status === "completed" && data.imageUrls?.[0] && task.shotId != null) {
+          const saveRes = await fetch("/api/project/" + id + "/assets", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ shotId: task.shotId, type: "ai_generate",
+              sourceUrl: data.imageUrls[0], provider: task.provider, model: task.model }),
+          });
+          if (!saveRes.ok) throw new Error(t("taskResumeFailed"));
+          await reloadAssets();
+          setTaskMsg(t("taskResumeDone"));
+        } else if (data.status === "completed" && data.videoUrls?.[0]) {
           if (task.controlPlan && "kind" in task.controlPlan && task.controlPlan.kind === "repair") {
             const finalizeRes = await fetch(`/api/project/${id}/repair`, {
               method: "POST",
@@ -650,6 +659,25 @@ export default function AssetsPage() {
       const referenceAudioUrls = controlPlan.referenceInputs.filter((item) => item.mediaType === "audio").map((item) => item.url);
       const controlSummary = sanitizeVideoControlSummary(controlPlan);
       try {
+        if (videoModelTarget.provider === "glabs-webhook") {
+          // Documented G-Labs Meta has NO duration control. The notice above the
+          // Assets list tells the user that actual duration is probed and trimmed in compose.
+          if (controlPlan.mode !== "image-to-video" || !controlPlan.firstFrameUrl)
+            throw new Error("G-Labs Meta for Assets requires image-to-video with a selected start frame.");
+          if (controlPlan.audioMode === "native" || referenceImageUrls.length || referenceVideoUrls.length || referenceAudioUrls.length)
+            throw new Error("Meta cannot accept native audio or generic image/video/audio references for this action.");
+          if (videoOptions.fps != null || videoOptions.motionStrength != null || videoOptions.seed != null || videoOptions.openaiSize != null)
+            throw new Error("Meta does not support FPS, motion strength, seed or custom size. Remove these settings.");
+          if (videoParams.resolution !== "720p")
+            throw new Error("Meta supports 480p/720p only; select 720p in Settings.");
+          if (videoOptions.negativePrompt) {
+            // Explicit, readable prompt-text conversion; there is no negative_prompt API field.
+            finalPrompt += " Avoid: " + String(videoOptions.negativePrompt);
+            delete videoOptions.negativePrompt;
+          }
+          delete videoOptions.duration;
+          videoOptions.extra = { resolution: "720p", count: 1 };
+        }
         const res = await fetch("/api/ai/video", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -771,7 +799,7 @@ export default function AssetsPage() {
         continuity: [...(projectCreativeIntent.continuity ?? []), ...projectVisualBible.characterAnchors, ...projectVisualBible.wardrobeAnchors, ...projectVisualBible.environmentAnchors, ...projectVisualBible.lightingAnchors],
         productConstraints: [...(projectCreativeIntent.productConstraints ?? []), ...projectVisualBible.productAnchors],
       });
-      const genPrompt = projectDirection.prompt ? `${shotPrompt}. Project direction: ${projectDirection.prompt}` : shotPrompt;
+      let genPrompt = projectDirection.prompt ? `${shotPrompt}. Project direction: ${projectDirection.prompt}` : shotPrompt;
       const consistencyFailure = checkPromptConsistency(genPrompt, projectVisualBible).find((issue) => issue.severity === "fail");
       if (consistencyFailure) {
         setAssets((prev) => prev.map((item) => item.shotId === shotId ? { ...item, status: "failed", error: t("visualBibleBlocked", { anchor: consistencyFailure.anchor }) } : item));
@@ -779,6 +807,19 @@ export default function AssetsPage() {
       }
 
       try {
+        const imageOptions = buildImageOptions(imageParams);
+        if (projectDirection.negativePrompt) {
+          imageOptions.negativePrompt = [imageOptions.negativePrompt, projectDirection.negativePrompt].filter(Boolean).join(", ");
+        }
+        if (modelTarget.provider === "glabs-webhook") {
+          if (imageOptions.count !== 1 || imageOptions.steps != null || imageOptions.guidanceScale != null || imageOptions.seed != null)
+            throw new Error("GPT Image 2 Webhook supports one image/job, no steps, guidance or seed. Update image settings.");
+          if (imageOptions.negativePrompt) {
+            genPrompt += " Avoid: " + String(imageOptions.negativePrompt);
+            delete imageOptions.negativePrompt;
+          }
+          imageOptions.extra = { quality: "high", prompt_mode: "direct", reasoning: "none", web_search: false };
+        }
         const res = await fetch("/api/ai/image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -790,12 +831,8 @@ export default function AssetsPage() {
             mode: genMode,
             prompt: genPrompt,
             ...(useProductSafe && { imageUrl: productImages[0] }),
-            // user-defined image parameters (aspect ratio → dimensions / count / steps / guidance / seed / negative prompt)
-            options: (() => {
-              const options = buildImageOptions(imageParams);
-              if (projectDirection.negativePrompt) options.negativePrompt = [options.negativePrompt, projectDirection.negativePrompt].filter(Boolean).join(", ");
-              return options;
-            })(),
+            ...(modelTarget.provider === "glabs-webhook" && { projectId: id, shotId }),
+            options: imageOptions,
           }),
         });
         const data = await res.json();
@@ -1327,6 +1364,11 @@ export default function AssetsPage() {
           <span>{tm("shot", { id: uploadingShot })} · {shotUploadProgress?.verifying ? tm("verifying") : tm("uploading", { percent: shotUploadProgress?.percent ?? 0 })}</span>
           <Button variant="outline" className="min-h-11" onClick={() => shotUploadAbort.current?.abort()}>{tm("cancel")}</Button>
         </div>}
+        {(modelTarget?.provider === "glabs-webhook" || videoModelTarget?.provider === "glabs-webhook") && (
+          <div role="note" className="mb-4 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
+            {t("glabsLimitNotice")}
+          </div>
+        )}
         <LocalMaterialLibrary key={id} projectId={id} refreshKey={materialLibraryRevision}
           shots={assets.filter((asset) => asset.visualSource !== "product_image").map((asset) => ({ shotId: asset.shotId, description: asset.description || "" }))}
           canFill={assets.some((asset) => asset.visualSource !== "product_image" && asset.status !== "done")}

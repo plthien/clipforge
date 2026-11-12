@@ -38,6 +38,10 @@ export const settings: NamespaceMessages = {
     providerAlibabaTip: "万相系列，商品图生视频效果佳",
     providerSiliconflowDesc: "国产 AI 推理平台，提供高性价比的模型推理服务",
     providerSiliconflowTip: "国产高性价比推理平台",
+    providerGlabsDesc: "通过 Windows 本地 G-Labs Webhook 生成 GPT Image 2 图片和 Meta Muse 视频",
+    providerGlabsTip: "仅允许 127.0.0.1；不需要 OpenAI 平台 API Key。Meta 只支持 480p/720p，不能精确指定时长。",
+    glabsPortLabel: "Webhook 本地端口（仅限 127.0.0.1）",
+    glabsPrerequisites: "需运行 G-Labs 桌面版并启动 Webhook，具备 MAX 套餐及已登录的 GPT Image 2 / Meta AI 账号。测试连接仅验证可达性，不能确认账号可生成。",
     providerOpenaiDesc: "OpenAI 与兼容服务，支持图片编辑及 Sora 视频任务",
     providerOpenaiTip: "视频默认使用 /videos；兼容服务可将 Base URL 填为完整的 /v1/video/generations 地址。自建模型请在自定义模型中添加。",
 
@@ -235,6 +239,10 @@ export const settings: NamespaceMessages = {
     providerAlibabaTip: "Wanxiang series, great for product image-to-video",
     providerSiliconflowDesc: "Homegrown AI inference platform with cost-effective model inference",
     providerSiliconflowTip: "Cost-effective domestic inference platform",
+    providerGlabsDesc: "Local Windows G-Labs Webhook: GPT Image 2 images and Meta Muse video",
+    providerGlabsTip: "127.0.0.1 only. No OpenAI platform API key needed. Meta supports 480p/720p and no exact duration.",
+    glabsPortLabel: "Local Webhook port (127.0.0.1 only)",
+    glabsPrerequisites: "Start G-Labs desktop and its Webhook. MAX plan and signed-in eligible GPT Image 2 / Meta accounts are required. Connection check cannot confirm generation eligibility.",
     providerOpenaiDesc: "OpenAI and compatible servers — image editing and Sora video tasks",
     providerOpenaiTip: "Video uses /videos by default. For legacy servers, set Base URL to the full /v1/video/generations endpoint. Add self-hosted models under Custom models.",
 

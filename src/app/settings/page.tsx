@@ -59,6 +59,12 @@ const SETTINGS_TABS: string[] = SETTINGS_SECTIONS.map((s) => s.id);
 // AI platform configuration list
 const AI_PROVIDERS = [
   {
+    key: "glabs-webhook", name: "G-Labs Webhook",
+    descKey: "providerGlabsDesc", tipKey: "providerGlabsTip",
+    icon: <LuPalette className="w-5 h-5" />,
+    iconBg: "from-violet-500 to-indigo-600",
+  },
+  {
     key: "atlas-cloud",
     name: "Atlas Cloud",
     descKey: "providerAtlasDesc",
@@ -533,7 +539,22 @@ export default function SettingsPage() {
                         </div>
                       </div>
 
-                      {/* custom endpoint (proxy/self-hosted, optional) — collapsed by default so beginners are not disturbed */}
+                      {platform.key === "glabs-webhook" ? (
+                        <div className="mt-3 space-y-2">
+                          <Label className="text-xs">{t("glabsPortLabel")}</Label>
+                          <Input type="number" min={1} max={65535}
+                            value={provider.baseUrl?.split(":").pop() || "8765"}
+                            onChange={(e) => {
+                              const port = Number(e.target.value);
+                              setProvider(platform.key, { ...provider,
+                                baseUrl: Number.isInteger(port) && port >= 1 && port <= 65535
+                                  ? "http://127.0.0.1:" + port : "http://127.0.0.1:8765"
+                              });
+                            }}
+                            className="font-mono text-xs" />
+                          <p className="text-xs text-amber-500">{t("glabsPrerequisites")}</p>
+                        </div>
+                      ) : (
                       <details className="mt-3">
                         <summary className="text-xs text-muted-foreground/70 cursor-pointer list-none select-none hover:text-muted-foreground">
                           {t("providerBaseUrlLabel")}
@@ -552,6 +573,7 @@ export default function SettingsPage() {
                           />
                         </div>
                       </details>
+                      )}
                     </CardContent>
                   </Card>
                 );
