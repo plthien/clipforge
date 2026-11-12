@@ -4,8 +4,8 @@
  * /api/meta/generate. meta_muse is a ClipForge-only catalog alias.
  */
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, createWriteStream } from "node:fs";
-import { mkdir, readFile, realpath, rename, stat, unlink } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, open, readFile, realpath, rename, stat, unlink } from "node:fs/promises";
 import { extname, join, relative, sep } from "node:path";
 import { BaseProvider, ProviderError } from "./base";
 import { getUploadsDir } from "@/lib/paths";
@@ -265,17 +265,31 @@ export class GlabsWebhookProvider extends BaseProvider {
       const part = target + "." + randomUUID() + ".part";
       let written = 0;
       try {
-        const stream = createWriteStream(part, { flags: "wx" });
+        const output = await open(part, "wx");
+        const reader = response.body.getReader();
         try {
-          for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-            written += chunk.byteLength;
-            if (written > cap) return fail("Kết quả G-Labs vượt giới hạn tải", "GLABS_RESULT_TOO_LARGE");
-            if (!stream.write(Buffer.from(chunk))) await new Promise<void>((resolve) => stream.once("drain", resolve));
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            written += value.byteLength;
+            if (written > cap) fail("Kết quả G-Labs vượt giới hạn tải", "GLABS_RESULT_TOO_LARGE");
+            // FileHandle.writeFile appends to the current file position for each awaited chunk.
+            await output.writeFile(Buffer.from(value));
           }
-          await new Promise<void>((resolve, reject) => { stream.once("finish", resolve); stream.once("error", reject); stream.end(); });
-        } finally { stream.destroy(); }
-        if (!written || !(await validateOrDelete(part, file.ext === ".mp4" ? "video" : "image")))
-          return fail("File G-Labs không phải ảnh/video hợp lệ", "GLABS_RESULT_INVALID");
+        } finally {
+          await reader.cancel().catch(() => {});
+          await output.close();
+        }
+        if (!written) return fail("File G-Labs rỗng", "GLABS_RESULT_INVALID");
+        const prefix = Buffer.alloc(16);
+        const input = await open(part, "r");
+        try { await input.read(prefix, 0, prefix.length, 0); }
+        finally { await input.close(); }
+        const fileSignatureOk = file.ext === ".mp4"
+          ? prefix.toString("ascii", 4, 8) === "ftyp"
+          : imageMime(prefix) === IMAGE_MIME[file.ext];
+        if (!fileSignatureOk || !(await validateOrDelete(part, file.ext === ".mp4" ? "video" : "image")))
+          return fail("Chữ ký hoặc dữ liệu file G-Labs không hợp lệ", "GLABS_RESULT_INVALID");
         if (!existsSync(target)) await rename(part, target);
       } finally { await unlink(part).catch(() => {}); }
     }
@@ -302,8 +316,10 @@ export class GlabsWebhookProvider extends BaseProvider {
     const status = typeof data.status === "string" ? mapping[data.status] : undefined;
     if (!status) return fail("G-Labs trả trạng thái không xác định", "GLABS_BAD_RESPONSE");
     if (status === "failed") return {
-      taskId, status, error: typeof data.error === "string" ? "G-Labs generation failed" : "G-Labs generation failed",
-      errorCode: typeof data.error_code === "string" ? data.error_code.slice(0, 80) : "TASK_FAILED",
+      taskId, status, error: "G-Labs generation failed. Check the G-Labs application and account eligibility.",
+      errorCode: "TASK_FAILED",
+      extra: { upstreamErrorCode: typeof data.error_code === "string"
+        ? data.error_code.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) : "UNKNOWN" },
     };
     if (status !== "completed") return { taskId, status };
     if (!Array.isArray(data.results) || !data.results.length || !data.results.every((r) => typeof r === "string") || data.results.length > 4)

@@ -45,7 +45,7 @@ function validInputs(body: Record<string, unknown>, extraKeys: string[]) {
 }
 
 async function waitAndPersist(
-  request: NextRequest, provider: ReturnType<typeof createProvider>,
+  provider: ReturnType<typeof createProvider>,
   taskId: string, modelId: string, mediaType: "image" | "video",
   body: Record<string, unknown>, mode: string,
 ): Promise<NextResponse> {
@@ -101,7 +101,7 @@ export async function handleGlabsImage(req: NextRequest, body: Record<string, un
     const provider = createProvider({ name: "glabs-webhook", apiKey: body.apiKey as string, baseUrl: body.baseUrl as string | undefined });
     if (!provider.submitImageTask) throw new Error("G-Labs image task support unavailable");
     const { taskId, modelId } = await provider.submitImageTask(options);
-    return await waitAndPersist(req, provider, taskId, modelId, "image", body, mode);
+    return await waitAndPersist(provider, taskId, modelId, "image", body, mode);
   } catch (error) { return errorResponse(error); }
 }
 
@@ -112,6 +112,14 @@ export async function handleGlabsVideo(req: NextRequest, body: Record<string, un
     const provided = checkedOptions(body.options, videoKeys);
     if (body.referenceVideoUrls !== undefined || body.referenceImageUrls !== undefined || body.referenceAudioUrls !== undefined)
       throw new ProviderError("Meta video supports only named start/end image, not generic references", "GLABS_UNSUPPORTED_OPTION", "glabs-webhook");
+    if (body.controlPlan !== undefined) {
+      const plan = body.controlPlan;
+      if (!isRecord(plan) || plan.audioMode === "native" || plan.mode === "video-to-video" ||
+        (typeof plan.referenceCount === "number" && plan.referenceCount >
+          Number(Boolean(body.imageUrl)) + Number(Boolean(body.lastImageUrl)))) {
+        throw new ProviderError("Meta cannot honor this control plan (reference pack, native audio or reference video).", "GLABS_UNSUPPORTED_OPTION", "glabs-webhook");
+      }
+    }
     const mode = body.mode ?? (body.imageUrl ? "image-to-video" : "text-to-video");
     if (mode !== "image-to-video" && mode !== "text-to-video")
       throw new ProviderError("Meta does not support reference-to-video mode", "GLABS_BAD_MODE", "glabs-webhook");
@@ -124,6 +132,6 @@ export async function handleGlabsVideo(req: NextRequest, body: Record<string, un
     const provider = createProvider({ name: "glabs-webhook", apiKey: body.apiKey as string, baseUrl: body.baseUrl as string | undefined });
     if (!provider.submitVideoTask) throw new Error("G-Labs video task support unavailable");
     const { taskId, modelId } = await provider.submitVideoTask(options);
-    return await waitAndPersist(req, provider, taskId, modelId, "video", body, mode);
+    return await waitAndPersist(provider, taskId, modelId, "video", body, mode);
   } catch (error) { return errorResponse(error); }
 }
