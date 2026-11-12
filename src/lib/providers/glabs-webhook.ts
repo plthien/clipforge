@@ -19,7 +19,8 @@ export const GLABS_VIDEO_MODEL = "meta_muse";
 const PROVIDER = "glabs-webhook";
 const BODY_LIMIT = 50 * 1024 * 1024;
 const IMAGE_LIMIT = 12 * 1024 * 1024;
-const VIDEO_DOWNLOAD_LIMIT = 512 * 1024 * 1024;
+/** Shared cap for both G-Labs result download and project-owned materialization. */
+export const GLABS_VIDEO_FILE_LIMIT = 512 * 1024 * 1024;
 const IMAGE_RATIOS = ["1:1", "3:2", "4:3", "16:9", "2:3", "3:4", "9:16"];
 const VIDEO_RATIOS = ["9:16", "16:9", "1:1"];
 const IMAGE_MIME: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
@@ -289,7 +290,7 @@ export class GlabsWebhookProvider extends BaseProvider {
         cache: "no-store", signal: AbortSignal.timeout(120_000),
       });
       if (!response.ok || !response.body) return fail("G-Labs không còn file kết quả; job có thể đã bị xóa khi app khởi động lại", "GLABS_RESULT_UNAVAILABLE");
-      const cap = file.ext === ".mp4" ? VIDEO_DOWNLOAD_LIMIT : IMAGE_LIMIT * 2;
+      const cap = file.ext === ".mp4" ? GLABS_VIDEO_FILE_LIMIT : IMAGE_LIMIT * 2;
       if (Number(response.headers.get("content-length")) > cap) return fail("Kết quả G-Labs vượt giới hạn tải", "GLABS_RESULT_TOO_LARGE");
       const part = target + "." + randomUUID() + ".part";
       let written = 0;

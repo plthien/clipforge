@@ -147,25 +147,53 @@ export async function finalizeStoryboardGrid(input: FinalizeStoryboardGridInput)
   if (shotIds.some((shotId) => !Number.isInteger(shotId)) || new Set(shotIds).size !== shotIds.length)
     throw new Error("Storyboard Grid requires unique integer shot ids");
 
+  const projectDir = join(getUploadsDir(), input.projectId);
+  const key = taskKey(input.taskId);
+  const expected = shots.map((shot, index) => {
+    const fileName = `storyboard-grid-${key}-shot-${shot.shotId}.png`;
+    return {
+      shotId: shot.shotId,
+      index,
+      description: shot.description ?? "",
+      absPath: join(projectDir, fileName),
+      filePath: `/api/files/${input.projectId}/${fileName}`,
+    };
+  });
+  const existingRows = await db.select().from(assets).where(eq(assets.projectId, input.projectId));
+  const matchingRow = (item: (typeof expected)[number], rows = existingRows) => rows.find((row) =>
+    row.filePath === item.filePath && row.shotId === item.shotId && row.status === "done");
+  const fileValidity = new Map<string, boolean>();
+  for (const item of expected) fileValidity.set(item.filePath, await validatedExisting(item.absPath));
+
+  // A fully finalized Grid is immutable recovery output. In particular, a later
+  // manual take selection must survive every repeated resume.
+  if (expected.every((item) => fileValidity.get(item.filePath) && matchingRow(item))) {
+    const retained = await findRetainedGrid(input.projectId, projectDir, key);
+    return {
+      gridPath: retained?.publicPath ?? input.sourceUrl ?? expected[0].filePath,
+      cells: expected.map(({ shotId, filePath }) => ({ shotId, filePath })),
+      count: expected.length,
+      finalizationState: "complete" as const,
+    };
+  }
+
+  const hadPartialProgress = expected.some((item) => fileValidity.get(item.filePath) || matchingRow(item));
   const grid = await retainGridSource(input.projectId, input.taskId, input.sourceUrl);
   const { probeMedia } = await import("@/lib/media-probe");
   const probe = await probeMedia(grid.absPath);
   if (!probe.width || !probe.height) throw new Error("Cannot read storyboard Grid dimensions");
   const cells = computeGridCells(probe.width, probe.height);
-  const projectDir = join(getUploadsDir(), input.projectId);
-  const key = taskKey(input.taskId);
-  const prepared: { shotId: number; filePath: string; index: number; description: string }[] = [];
 
-  for (let index = 0; index < shots.length; index++) {
-    const shot = shots[index];
-    const fileName = `storyboard-grid-${key}-shot-${shot.shotId}.png`;
-    const target = join(projectDir, fileName);
-    if (!(await validatedExisting(target))) {
+  // Prepare and validate every missing crop before any DB selection changes.
+  for (const item of expected) {
+    if (!fileValidity.get(item.filePath)) {
+      const fileName = item.filePath.split("/").pop()!;
+      const target = item.absPath;
       const part = join(projectDir, `.${fileName}.${randomUUID()}.part.png`);
       try {
-        const cell = cells[index];
+        const cell = cells[item.index];
         await execFileAsync(ffmpegBin(), ["-y", "-i", grid.absPath, "-vf", `crop=${cell.w}:${cell.h}:${cell.x}:${cell.y}`, "-frames:v", "1", part]);
-        if (!(await validateOrDelete(part, "image"))) throw new Error(`Grid cell ${index + 1} is invalid`);
+        if (!(await validateOrDelete(part, "image"))) throw new Error(`Grid cell ${item.index + 1} is invalid`);
         try { await rename(part, target); }
         catch (error) {
           if (!(await validatedExisting(target))) throw error;
@@ -174,13 +202,17 @@ export async function finalizeStoryboardGrid(input: FinalizeStoryboardGridInput)
         await unlink(part).catch(() => {});
       }
     }
-    prepared.push({ shotId: shot.shotId, filePath: `/api/files/${input.projectId}/${fileName}`, index, description: shot.description ?? "" });
+    if (!(await validatedExisting(item.absPath))) throw new Error(`Grid cell ${item.index + 1} is unavailable after finalization`);
   }
 
-  const saved = db.transaction((tx) => {
+  const committed = db.transaction((tx) => {
     const finalized: { shotId: number; filePath: string }[] = [];
-    for (const item of prepared) {
-      let row = tx.select().from(assets).where(and(eq(assets.projectId, input.projectId), eq(assets.filePath, item.filePath))).get();
+    let inserted = 0;
+    for (const item of expected) {
+      const rows = tx.select().from(assets)
+        .where(and(eq(assets.projectId, input.projectId), eq(assets.filePath, item.filePath))).all();
+      let row = rows.find((candidate) => candidate.shotId === item.shotId && candidate.status === "done");
+      if (rows.length && !row) throw new Error(`Storyboard Grid asset integrity mismatch for shot ${item.shotId}`);
       if (!row) {
         row = tx.insert(assets).values({
           projectId: input.projectId,
@@ -193,12 +225,21 @@ export async function finalizeStoryboardGrid(input: FinalizeStoryboardGridInput)
           selected: false,
           status: "done",
         }).returning().get();
+        // Only a newly finalized cell becomes active. Existing Grid rows are never
+        // re-selected, preserving any manual take chosen after their completion.
+        tx.update(assets).set({ selected: false }).where(and(eq(assets.projectId, input.projectId), eq(assets.shotId, item.shotId))).run();
+        tx.update(assets).set({ selected: true }).where(eq(assets.id, row.id)).run();
+        inserted += 1;
       }
-      tx.update(assets).set({ selected: false }).where(and(eq(assets.projectId, input.projectId), eq(assets.shotId, item.shotId))).run();
-      tx.update(assets).set({ selected: true }).where(eq(assets.id, row.id)).run();
       finalized.push({ shotId: item.shotId, filePath: item.filePath });
     }
-    return finalized;
+    return { finalized, inserted };
   });
-  return { gridPath: grid.publicPath, cells: saved, count: saved.length };
+  return {
+    gridPath: grid.publicPath,
+    cells: committed.finalized,
+    count: committed.finalized.length,
+    finalizationState: committed.inserted === 0 ? "complete" as const
+      : hadPartialProgress ? "resumed" as const : "finalized" as const,
+  };
 }

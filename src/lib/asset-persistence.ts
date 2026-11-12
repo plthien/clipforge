@@ -8,6 +8,7 @@ import { assets } from "@/lib/db/schema";
 import { validateMediaFile, validateOrDelete } from "@/lib/media-validate";
 import { getDataDir, getUploadsDir } from "@/lib/paths";
 import { MAX_DOWNLOAD_BYTES } from "@/lib/providers/stock-types";
+import { GLABS_VIDEO_FILE_LIMIT } from "@/lib/providers/glabs-webhook";
 import { resolveUploadFilePath } from "@/lib/remote-image";
 import { sanitizeGenerationControlSummary, type GenerationControlSummary } from "@/lib/video-repair-plan";
 import { extractLastFrame, LAST_FRAME_SUFFIX } from "@/lib/video-composer/frame-extract";
@@ -38,7 +39,7 @@ async function materializeGlabsSource(projectId: string, sourceUrl: string): Pro
   const info = await stat(source);
   const ext = extname(source).toLowerCase();
   const kind = ext === ".mp4" ? "video" : "image";
-  const sizeLimit = kind === "video" ? MAX_DOWNLOAD_BYTES : 24 * 1024 * 1024;
+  const sizeLimit = kind === "video" ? GLABS_VIDEO_FILE_LIMIT : 24 * 1024 * 1024;
   if (!info.isFile() || info.size <= 0 || info.size > sizeLimit) throw new Error("Invalid or oversized G-Labs media file");
   if (!(await validateMediaFile(source, kind))) throw new Error("G-Labs media metadata is invalid");
 
