@@ -13,13 +13,19 @@ function Invoke-Gate([string]$Name, [string]$Command) {
   Write-Host ("R1 GATE START: " + $Name)
   $started = Get-Date
   $code = 0
+  $previousPreference = $ErrorActionPreference
   try {
+    # Windows PowerShell 5.1 promotes native stderr to ErrorRecord when the preference
+    # is Stop. Warnings from pnpm are not command failures: trust the native exit code.
+    $ErrorActionPreference = "Continue"
     $lines = & cmd.exe /d /s /c "$Command" 2>&1
+    $code = $LASTEXITCODE
     $lines | Out-File -FilePath $log -Encoding utf8
-    if ($LASTEXITCODE -ne 0) { $code = $LASTEXITCODE }
   } catch {
     $_ | Out-File -FilePath $log -Encoding utf8 -Append
     $code = 1
+  } finally {
+    $ErrorActionPreference = $previousPreference
   }
   $results.Add([pscustomobject]@{ gate = $Name; exit_code = $code; duration_s = [int]((Get-Date) - $started).TotalSeconds; log = $log })
   if ($code -eq 0) { Write-Host ("R1 GATE PASS: " + $Name) } else { Write-Warning ("R1 GATE FAIL: " + $Name + " (see " + $log + ")") }
