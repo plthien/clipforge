@@ -169,7 +169,7 @@ export async function POST(req: NextRequest) {
         analysis = await analyzeProduct(imageUrls, llmConfig);
       } catch (e) {
         // Image analysis failure should not block script generation
-        console.warn("商品图片分析失败（已跳过）:", e);
+        console.warn("Product vision analysis skipped:", e instanceof Error ? e.name : "unknown");
       }
     }
 
