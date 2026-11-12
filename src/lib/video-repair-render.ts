@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from "fs/promises";
 import { dirname } from "path";
 import { promisify } from "util";
 import { buildAigcMetadataArgv } from "@/lib/compliance-metadata";
-import { ffmpegBin } from "@/lib/ffmpeg-path";
+import { ffmpegBin, ffmpegComplexFilterFileFlag } from "@/lib/ffmpeg-path";
 import { probeMedia } from "@/lib/media-probe";
 import { validateMediaFile } from "@/lib/media-validate";
 import type { RepairWindow } from "@/lib/video-repair-plan";
@@ -63,7 +63,7 @@ export function buildVideoRepairInvocation(input: {
     "-nostdin", "-v", "error", "-y",
     "-i", input.sourcePath,
     "-i", input.replacementPath,
-    "-/filter_complex", filterFile,
+    ffmpegComplexFilterFileFlag(), filterFile,
     "-map", "[vout]",
     ...(input.sourceHasAudio ? ["-map", "0:a:0"] : []),
     "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",

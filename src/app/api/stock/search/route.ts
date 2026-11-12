@@ -184,7 +184,7 @@ export async function POST(req: NextRequest) {
 
       saved.push({ ...row, bytes, mediaType: c.mediaType, downloadUrl: c.downloadUrl, attributionText: c.attributionText });
     } catch (e) {
-      console.error(`素材下载落库失败（${c.downloadUrl}）:`, e);
+      console.error(`素材下载落库失败（${c.source}/${c.id}）:`, e instanceof Error ? e.name : "unknown");
     }
   }
 

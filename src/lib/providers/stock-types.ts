@@ -264,7 +264,7 @@ export async function downloadStockFile(
 
   if (!/^https?:\/\//i.test(url)) throw new Error("UNSUPPORTED_STOCK_URL_SCHEME");
   const res = await fetchWithTimeout(url);
-  if (!res.ok) throw new Error(`素材下载失败 ${res.status}: ${url}`);
+  if (!res.ok) throw new Error(`素材下载失败 HTTP ${res.status}`);
 
   const contentType = res.headers.get("content-type");
   const declaredLen = Number(res.headers.get("content-length") || 0);
