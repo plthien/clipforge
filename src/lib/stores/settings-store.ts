@@ -10,8 +10,9 @@ import {
   type ImageGenParams,
   type VideoGenParams,
 } from "@/lib/gen-params";
-import { ATLAS_BASE_URL, ATLAS_LLM_BASE_URL, ATLAS_ONEKEY_MODELS, fillAtlasModelDefaults } from "@/lib/atlas-onekey";
+import { ATLAS_BASE_URL, fillAtlasModelDefaults } from "@/lib/atlas-onekey";
 import type { MotionIntensity, MotionRealismTier } from "@/lib/motion-prompt";
+import { DEEPSEEK_BASE_URL, DEEPSEEK_DEFAULT_MODEL, DEEPSEEK_VISION_MODEL, isDeepSeekEndpoint, normalizeSavedDeepSeekModel } from "@/lib/deepseek-policy";
 import {
   isProductionProfileId,
   productionProfilePatch,
@@ -115,58 +116,26 @@ export interface SettingsState {
   applyAtlasOneKey: (apiKey: string) => void;
 }
 
-/** Pollinations 的新端点（旧的 text.pollinations.ai 免 Key 接口已停用） */
-const POLLINATIONS_BASE_URL = "https://gen.pollinations.ai/v1";
+/** Migrate only the LLM slot. Media/TTS provider credentials remain intact. */
+export function normalizeDeepSeekSetting(llm?: Partial<LLMSetting>): LLMSetting {
+  // A prior provider's key must NEVER be forwarded to DeepSeek, including Atlas one-key.
+  const keepKey = isDeepSeekEndpoint(llm?.baseUrl);
+  return {
+    provider: "DeepSeek",
+    baseUrl: DEEPSEEK_BASE_URL,
+    apiKey: keepKey ? (llm?.apiKey ?? "") : "",
+    model: keepKey ? normalizeSavedDeepSeekModel(llm?.model) : DEEPSEEK_DEFAULT_MODEL,
+    visionModel: DEEPSEEK_VISION_MODEL,
+  };
+}
 
-/**
- * 持久化设置的版本迁移（纯函数，可单测）。
- *
- * v1：清洗历史版本预设写入的失效模型名（旧预设填过不存在的模型 ID，"测试连接"只验 Key
- * 不验模型名所以一直显示正常，直到生成脚本才报 Model Not Exist——issue #12 用户即此场景）。
- * 只在 baseUrl 匹配对应官方端点时改写，避免误伤自建代理上的同名自定义模型。
- *
- * v2：Pollinations 免 Key 免费文本接口（text.pollinations.ai/openai）已停用，实测只返回
- * 402/502（issue #19：用户装完选 Pollinations，一生成就报 402 Payment Required，Mac/Win 都一样）。
- * 把地址迁到官方新端点 gen.pollinations.ai/v1，并清掉老预设写入的占位 Key "pollinations"——
- * 新端点必须用注册领取的真 Key，留着占位值只会把 401 伪装成"已配置"。清空后设置页会明确提示填 Key。
- *
- * v3：Ollama 预设的 localhost 改成 127.0.0.1。Windows 上 localhost 会先解析到 ::1，而 Ollama 默认
- * 只监听 127.0.0.1，用户会看到一个无从排查的"连不上"（issue #19 追问）。同端口同机，改写无副作用。
- */
 export function migrateSettings(state: SettingsState): SettingsState {
-  const llm = state?.llm;
-  if (llm?.baseUrl) {
-    const fixes: Array<{ hostRe: RegExp; from: string; to: string }> = [
-      { hostRe: /api\.deepseek\.com/i, from: "deepseek-v3.2", to: "deepseek-v4-flash" },
-      { hostRe: /volces\.com/i, from: "doubao-seed-2.0-pro", to: "doubao-seed-2-0-pro-260215" },
-      // Atlas one-key's old default: v3.2's thinking mode leaks reasoning text into JSON output
-      // and breaks script generation (2026-08 field test) — move to the clean-JSON V4 flagship.
-      // Only the exact old default is migrated; a model the user picked themselves stays put.
-      { hostRe: /api\.atlascloud\.ai/i, from: "deepseek-ai/deepseek-v3.2", to: "deepseek-ai/deepseek-v4-pro" },
-    ];
-    for (const f of fixes) {
-      if (!f.hostRe.test(llm.baseUrl)) continue;
-      if (llm.model === f.from) llm.model = f.to;
-      if (llm.visionModel === f.from) llm.visionModel = f.to;
-    }
-
-    // Atlas one-key used to write the media base into the LLM slot, so every script generation
-    // 404'd on a model that does exist (issue #24). Move those installs onto the chat gateway.
-    if (/^https?:\/\/api\.atlascloud\.ai\/api\/v1\/?$/i.test(llm.baseUrl)) {
-      llm.baseUrl = ATLAS_LLM_BASE_URL;
-    }
-
-    if (/text\.pollinations\.ai/i.test(llm.baseUrl)) {
-      llm.baseUrl = POLLINATIONS_BASE_URL;
-      if (llm.apiKey === "pollinations") llm.apiKey = "";
-    }
-
-    llm.baseUrl = llm.baseUrl.replace(/^(https?:\/\/)localhost(:11434\b)/i, "$1127.0.0.1$2");
-  }
-  if (!isProductionProfileId(state?.activeProductionProfile)) {
-    state.activeProductionProfile = "balanced";
-  }
-  return state;
+  return {
+    ...state,
+    llm: normalizeDeepSeekSetting(state?.llm),
+    activeProductionProfile: isProductionProfileId(state?.activeProductionProfile)
+      ? state.activeProductionProfile : "balanced",
+  };
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -181,13 +150,7 @@ export const useSettingsStore = create<SettingsState>()(
         siliconflow: { enabled: false, apiKey: "" },
         openai: { enabled: false, apiKey: "" },
       },
-      llm: {
-        provider: "",
-        baseUrl: "",
-        apiKey: "",
-        model: "",
-        visionModel: "",
-      },
+      llm: normalizeDeepSeekSetting(),
       tts: {
         enabled: false,
         provider: DEFAULT_TTS_PROVIDER,
@@ -224,7 +187,7 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({
           providers: { ...state.providers, [name]: setting },
         })),
-      setLLM: (llm) => set({ llm }),
+      setLLM: (llm) => set({ llm: normalizeDeepSeekSetting(llm) }),
       setTTS: (tts) => set({ tts }),
       setDefaultImageModel: (model) => set({ defaultImageModel: model }),
       setDefaultVideoModel: (model) => set({ defaultVideoModel: model }),
@@ -253,14 +216,6 @@ export const useSettingsStore = create<SettingsState>()(
             video: state.defaultVideoModel,
           });
           return {
-            llm: {
-              provider: "Atlas Cloud",
-              // chat gateway, not ATLAS_BASE_URL — the media base 404s every chat call (issue #24)
-              baseUrl: ATLAS_LLM_BASE_URL,
-              apiKey: key,
-              model: ATLAS_ONEKEY_MODELS.llm,
-              visionModel: ATLAS_ONEKEY_MODELS.vision,
-            },
             providers: {
               ...state.providers,
               "atlas-cloud": { ...state.providers["atlas-cloud"], enabled: true, apiKey: key },
@@ -285,7 +240,7 @@ export const useSettingsStore = create<SettingsState>()(
       // v4：补充面向创作目标的生产方案；旧设置迁移到兼顾质量与成本的 balanced。
       // v5：Atlas 一键接入曾把「素材网关」/api/v1 写进 LLM 地址，导致写脚本必 404（issue #24），
       // 迁到 OpenAI 兼容的聊天网关 /v1。
-      version: 5,
+      version: 6,
       migrate: (persisted) => migrateSettings(persisted as SettingsState),
     }
   )

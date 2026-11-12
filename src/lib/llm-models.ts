@@ -7,6 +7,8 @@
  * `qwen2.5:7b-instruct` while the app asked for `qwen2.5`, and all the user ever saw was a 404).
  */
 
+import { assertDeepSeekEndpoint, DEEPSEEK_MODELS } from "@/lib/deepseek-policy";
+
 const MODELS_TIMEOUT_MS = 8000;
 
 /** Bilingual text, structurally identical to llm-error's LLMMessagePair (declared here to stay dep-free). */
@@ -49,15 +51,16 @@ export async function listModels(
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string[]> {
+  const endpoint = assertDeepSeekEndpoint(baseUrl);
   try {
-    const res = await fetchImpl(`${normalizeChatBase(baseUrl)}/models`, {
+    const res = await fetchImpl(`${endpoint}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(MODELS_TIMEOUT_MS),
     });
     if (!res.ok) return [];
     const json = (await res.json()) as { data?: Array<{ id?: unknown }> };
     if (!Array.isArray(json?.data)) return [];
-    return json.data.map((m) => (typeof m?.id === "string" ? m.id : "")).filter(Boolean);
+    return json.data.map((m) => (typeof m?.id === "string" ? m.id : "")).filter((id): id is string => DEEPSEEK_MODELS.some((m) => m === id));
   } catch {
     return [];
   }

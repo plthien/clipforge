@@ -18,7 +18,8 @@
  */
 
 import OpenAI, { APIConnectionError, APIConnectionTimeoutError } from "openai";
-import { listModels, modelListHint, normalizeChatBase } from "@/lib/llm-models";
+import { listModels, modelListHint } from "@/lib/llm-models";
+import { assertDeepSeekConfig } from "@/lib/deepseek-policy";
 
 /** Endpoint + model a call was aimed at (used to tailor the hint). */
 export interface LLMTarget {
@@ -205,19 +206,14 @@ export function optionalParamRetryFetch(
  * Free/keyless endpoints (Pollinations, Ollama) accept any non-empty key; the SDK requires one.
  */
 export function createLLMClient(config: LLMClientConfig): OpenAI {
-  // 402 is only worth retrying on the anonymous shared pool, where it means "the pool ran dry this
-  // second". With a real key it means "this key's daily pollen is spent" — that clears tomorrow, not
-  // in 5s, so retrying would just make the user wait 15s for the same message.
-  const retryFreePool402 = isPollinations(config.baseUrl) && !config.apiKey;
+  // This is the last line of defense for scripts, judge, publish and all other LLM callers.
+  // Never dispatch a request to an arbitrary OpenAI-compatible server.
+  const allowed = assertDeepSeekConfig(config);
   return new OpenAI({
-    // normalized so Atlas' media base pasted into the LLM field still reaches the chat gateway
-    baseURL: config.baseUrl ? normalizeChatBase(config.baseUrl) : config.baseUrl,
+    baseURL: allowed.baseUrl,
     apiKey: config.apiKey || "no-key",
-    // SDK default is 2; free/shared endpoints flap enough to be worth one more attempt.
     maxRetries: 3,
-    // Cap recovery and optional-param recovery apply everywhere (our params, our problem); the
-    // 402 hook only where 402 is genuinely transient. Composed so one wrapper feeds the other.
-    fetch: optionalParamRetryFetch(tokenCapRetryFetch(retryFreePool402 ? freePoolRetryFetch() : fetch)),
+    fetch: optionalParamRetryFetch(tokenCapRetryFetch()),
   });
 }
 

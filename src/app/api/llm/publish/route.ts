@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       commentKit,
     });
   } catch (error) {
-    console.error("生成发布文案失败:", error);
+    console.error("Publish-copy generation failed:", error instanceof Error ? error.name : "unknown");
     const { zh, en } = llmErrorPair(error);
     return NextResponse.json(
       { error: errText(req, zh || "生成失败", en || "Generation failed") },

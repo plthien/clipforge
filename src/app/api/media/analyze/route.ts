@@ -4,6 +4,7 @@ import { extname, join } from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, errText, pickLocale } from "@/lib/api-error";
 import { llmErrorPair } from "@/lib/llm-error";
+import { assertDeepSeekConfig } from "@/lib/deepseek-policy";
 import { analyzeVisualMedia } from "@/lib/media-analysis";
 import { probeMedia } from "@/lib/media-probe";
 import type { LLMConfig } from "@/lib/script-engine/generator";
@@ -46,6 +47,11 @@ export async function POST(req: NextRequest) {
   const config = parseConfig(form.get("llmConfig"));
   if (!(file instanceof File)) return apiError(req, "请选择图片或视频", "Choose an image or video", 400);
   if (!config) return apiError(req, "请先配置可看图的视觉模型", "Configure a vision-capable model first", 400);
+  try {
+    assertDeepSeekConfig(config);
+  } catch {
+    return apiError(req, "仅允许 DeepSeek 官方模型与地址", "Only official DeepSeek models and endpoint are allowed", 400);
+  }
 
   const mediaType = IMAGE_MIME.has(file.type) ? "image" : VIDEO_MIME.has(file.type) ? "video" : null;
   if (!mediaType) return apiError(req, "仅支持 JPG、PNG、WebP、MP4、WebM、MOV", "Only JPG, PNG, WebP, MP4, WebM, and MOV are supported", 400);
@@ -102,7 +108,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Media analysis failed:", error);
+    console.error("Media analysis failed:", error instanceof Error ? error.name : "unknown");
     const pair = llmErrorPair(error);
     return NextResponse.json({ error: errText(req, `媒体解构失败：${pair.zh}`, `Media analysis failed: ${pair.en}`) }, { status: 500 });
   } finally {

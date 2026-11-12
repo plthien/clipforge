@@ -54,6 +54,19 @@ export function escapeSubtitlesPath(p: string): string {
   return p.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }
 
+/**
+ * Paths in a subtitles filter are parsed twice by FFmpeg: first as filtergraph text,
+ * then as colon-separated subtitles options. A Windows drive colon therefore needs
+ * TWO backslashes in the filtergraph string (D\\\\:/...), not the single slash
+ * used by drawtext's existing escapeSubtitlesPath helper.
+ *
+ * This is intentionally limited to subtitles/ass filters; drawtext and shell
+ * escaping have different quoting rules.
+ */
+export function escapeSubtitlesFilterPath(p: string): string {
+  return escapeSubtitlesPath(p).replace(/\\:/g, "\\\\:");
+}
+
 /** drawtext filter options (text/fontFile are escaped internally, so new overlays can't miss escaping — an audit once caught a bug caused by using the wrong escaper for font paths) */
 export interface DrawtextOpts {
   fontFile?: string;
@@ -653,8 +666,8 @@ function assembleComposeGraph(config: ComposeConfig): ComposeGraph {
     const subtitleStream = `sub_out`;
     const fontFile = config.subtitle.fontFile ?? resolveChineseFontFile();
     // fontsdir points to the directory containing the Chinese font so that libass can locate it on Linux (no CoreText)
-    const fontsdirArg = fontFile ? `:fontsdir=${escapeSubtitlesPath(dirname(fontFile))}` : "";
-    filterParts.push(`[${currentVideoStream}]subtitles=${escapeSubtitlesPath(config.subtitle.karaokeAssPath)}${fontsdirArg}[${subtitleStream}]`);
+    const fontsdirArg = fontFile ? `:fontsdir=${escapeSubtitlesFilterPath(dirname(fontFile))}` : "";
+    filterParts.push(`[${currentVideoStream}]subtitles=${escapeSubtitlesFilterPath(config.subtitle.karaokeAssPath)}${fontsdirArg}[${subtitleStream}]`);
     currentVideoStream = subtitleStream;
   } else if (config.subtitle?.texts.length) {
     const subtitleStream = `sub_out`;

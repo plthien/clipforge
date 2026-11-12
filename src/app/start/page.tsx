@@ -3,8 +3,8 @@
 /**
  * New "act first, configure later" landing page (dark studio direction).
  * Lives as an independent route /start, leaving the homepage (currently being rewritten for i18n) untouched.
- * Users land and act immediately: upload a product image or describe a topic → kick off generation right away;
- * only prompted to configure a Key when AI is actually needed (Atlas one-click recommended).
+ * Users land and act immediately: upload a product image or import a product URL.
+ * Only DeepSeek text credentials are requested when script generation starts.
  */
 
 import { randomUUID } from "@/lib/uuid";
@@ -17,25 +17,8 @@ import { useProductLibraryStore } from "@/lib/stores/product-library-store";
 import { useCharacterStore } from "@/lib/stores/project-store";
 import { getExampleProducts, type ExampleProduct } from "@/lib/examples";
 import { useT, useLocale } from "@/lib/i18n";
-import { ATLAS_KEYS_URL } from "@/lib/atlas-onekey";
 import { formatRelativeTime } from "@/lib/relative-time";
-import { classifyTrendTitle, pickDailyTrend, TREND_CATEGORY_IDS } from "@/lib/trends";
-import type { TrendTopic, TrendCategoryId } from "@/lib/trends";
-
-/** How many trend chips are shown at once; "shuffle" pages through the full board. */
-const TRENDS_PAGE_SIZE = 8;
-
-/** localStorage keys for the daily-persona picker (device-local, no account concept) */
-const DAILY_PERSONA_KEY = "clipforge_daily_persona";
-const DAILY_LAST_KEY = "clipforge_daily_last";
-
-/** Local calendar date (YYYY-MM-DD) — "today" for the daily-pick marker follows the user's clock. */
-function localDateStamp(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-type Mode = "upload" | "topic" | "link";
+type Mode = "upload" | "link";
 
 /** AI-mode commerce form → engine vocab: beginner-facing words map onto script style + video mode */
 const FORM_PRESETS = {
@@ -64,7 +47,6 @@ export default function StartPage() {
   const t = useT("start");
   const locale = useLocale();
   const { llm } = useSettingsStore();
-  const applyAtlasOneKey = useSettingsStore((s) => s.applyAtlasOneKey);
   const llmReady = llm.apiKey.trim().length > 0;
   // example products follow the UI language
   const examples = getExampleProducts(locale);
@@ -80,7 +62,6 @@ export default function StartPage() {
   const [images, setImages] = useState<PickedImage[]>([]);
   const [productName, setProductName] = useState("");
   const [sellingPoints, setSellingPoints] = useState("");
-  const [topic, setTopic] = useState("");
   const [link, setLink] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -89,18 +70,11 @@ export default function StartPage() {
   const [stageIdx, setStageIdx] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [needKey, setNeedKey] = useState(false);
-  const [atlasKey, setAtlasKey] = useState("");
+  const [deepseekKey, setDeepseekKey] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [recent, setRecent] = useState<RecentProject[]>([]);
-  const [trends, setTrends] = useState<TrendTopic[]>([]);
-  const [trendsSource, setTrendsSource] = useState<string>("");
-  const [trendsPage, setTrendsPage] = useState(0);
-  const [trendsCat, setTrendsCat] = useState<"all" | TrendCategoryId>("all");
-  // daily-persona picker state (persisted per device)
-  const [dailyPersona, setDailyPersona] = useState("");
-  const [dailyLast, setDailyLast] = useState<{ date: string; topic: string } | null>(null);
-  const [dailyMsg, setDailyMsg] = useState<string>("");
+  // First-visit local guide state.
   // first-visit guide card (dismiss persists per device; read after mount to keep SSR stable)
   const [showGuide, setShowGuide] = useState(false);
   useEffect(() => {
@@ -183,98 +157,6 @@ export default function StartPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // trend radar ("what to post today"): Chinese UI reads domestic boards, English UI reads Google Trends.
-  // Failure or an empty board silently hides the section — the landing page must never block on it.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(locale === "zh" ? "/api/trends?source=cn&limit=48" : "/api/trends?geo=US&limit=48");
-        if (!res.ok) return;
-        const data = await res.json();
-        if (cancelled || !Array.isArray(data.topics)) return;
-        // Curate for sellable content: keep only topics that classify into a creator
-        // category, and drop "society" (news/incidents/politics) — raw boards lead with
-        // headlines that make no sense as commerce videos and are a compliance risk for
-        // AI-generated content.
-        setTrends(
-          data.topics.filter((tp: TrendTopic) => {
-            if (typeof tp?.title !== "string" || !tp.title.trim()) return false;
-            const cat = classifyTrendTitle(tp.title);
-            return cat !== null && cat !== "society";
-          })
-        );
-        setTrendsSource(typeof data.source === "string" ? data.source : "");
-        setTrendsPage(0);
-      } catch {
-        /* keyless free endpoint — silent degradation */
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [locale]);
-
-  // load the persisted daily persona + today's marker once on mount
-  // (deferred to a microtask: hydrating from localStorage after paint keeps SSR markup stable
-  // and satisfies the no-sync-setState-in-effect rule)
-  useEffect(() => {
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      try {
-        setDailyPersona(localStorage.getItem(DAILY_PERSONA_KEY) || "");
-        const last = JSON.parse(localStorage.getItem(DAILY_LAST_KEY) || "null");
-        if (last && typeof last.date === "string" && typeof last.topic === "string") setDailyLast(last);
-      } catch {
-        /* corrupted storage → start fresh */
-      }
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  // categories present on the current board (chips render only for non-empty ones; hidden entirely when nothing classifies)
-  const trendsCats = TREND_CATEGORY_IDS.filter((id) => trends.some((tp) => classifyTrendTitle(tp.title) === id));
-  const catFiltered = trendsCat === "all" ? trends : trends.filter((tp) => classifyTrendTitle(tp.title) === trendsCat);
-
-  // current slice of the filtered board; "shuffle" cycles through pages
-  const trendsPageCount = Math.max(1, Math.ceil(catFiltered.length / TRENDS_PAGE_SIZE));
-  const trendsShown = catFiltered.slice(
-    (trendsPage % trendsPageCount) * TRENDS_PAGE_SIZE,
-    (trendsPage % trendsPageCount) * TRENDS_PAGE_SIZE + TRENDS_PAGE_SIZE
-  );
-  const trendsSourceLabel =
-    trendsSource === "douyin" ? t("trendsSourceDouyin") : trendsSource === "toutiao" ? t("trendsSourceToutiao") : "Google Trends";
-
-  // tap a trend → prefill it as a one-sentence topic and bring the action card into view
-  const pickTrend = (tp: TrendTopic) => {
-    setMode("topic");
-    setTopic(tp.title);
-    requestAnimationFrame(() => cardRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }));
-  };
-
-  // daily pick: score the full board against the persona keywords, prefill the winner, remember today's pick
-  const runDailyPick = () => {
-    const pick = pickDailyTrend(trends, dailyPersona);
-    if (!pick) return;
-    pickTrend(pick.topic);
-    setDailyMsg(t(pick.matched ? "dailyPickedMatched" : "dailyPickedFallback").replace("{topic}", pick.topic.title));
-    const last = { date: localDateStamp(), topic: pick.topic.title };
-    setDailyLast(last);
-    try {
-      localStorage.setItem(DAILY_LAST_KEY, JSON.stringify(last));
-    } catch {
-      /* storage full/blocked — the marker is a convenience, not a requirement */
-    }
-  };
-
-  const onPersonaChange = (v: string) => {
-    setDailyPersona(v);
-    try {
-      localStorage.setItem(DAILY_PERSONA_KEY, v);
-    } catch {
-      /* ignore */
-    }
-  };
-
   // navigate to the appropriate step based on project status
   const stepFor = (status: string) =>
     status === "done" || status === "composing" || status === "video" ? "video" : status === "assets" ? "assets" : "script";
@@ -321,14 +203,11 @@ export default function StartPage() {
     }
   }, []);
 
-  const canStart =
-    mode === "topic"
-      ? topic.trim().length >= 2
-      : mode === "link"
-      ? /^https?:\/\/.+/i.test(link.trim())
-      : images.length >= 1 && productName.trim().length > 0;
+  const canStart = mode === "link"
+    ? /^https?:\/\/.+/i.test(link.trim())
+    : images.length >= 1 && productName.trim().length > 0;
 
-  // read LLM config live from the store: after one-click setup the newly written Key is immediately available in the same tick, avoiding stale closure values
+  // Read DeepSeek config live: the inline key connection writes it before generation.
   const llmConfig = () => {
     const l = useSettingsStore.getState().llm;
     return { baseUrl: l.baseUrl, apiKey: l.apiKey, model: l.model, visionModel: l.visionModel };
@@ -351,25 +230,9 @@ export default function StartPage() {
   };
 
   // step labels for the busy takeover, per entry mode (rendered as a live checklist)
-  const busySteps =
-    mode === "upload"
-      ? [t("stageCreate"), t("stageUpload"), t("stageScript")]
-      : mode === "link"
-      ? [t("stageIngest"), t("stageScript")]
-      : [t("stageScript")];
-
-  const startTopic = async () => {
-    setStageIdx(0);
-    setStage(t("stageScript"));
-    const res = await fetch("/api/topic/script", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic: topic.trim(), narrationStyle: "knowledge", targetDuration: 25, llmConfig: llmConfig() }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok && !data.projectId) throw new Error(data.error || t("errTopicScript"));
-    router.push(`/project/${data.projectId}/script?auto=1${genQuery()}`);
-  };
+  const busySteps = mode === "upload"
+    ? [t("stageCreate"), t("stageUpload"), t("stageScript")]
+    : [t("stageIngest"), t("stageScript")];
 
   const startUpload = async () => {
     setStageIdx(0);
@@ -463,8 +326,7 @@ export default function StartPage() {
     setBusy(true);
     setError(null);
     try {
-      if (mode === "topic") await startTopic();
-      else if (mode === "link") await startLink();
+      if (mode === "link") await startLink();
       else await startUpload();
     } catch (e) {
       setError(e instanceof Error ? e.message : t("errGeneric"));
@@ -476,7 +338,7 @@ export default function StartPage() {
 
   const onStart = () => {
     if (!canStart || busy) return;
-    // no LLM configured: expand the Atlas one-click setup panel inline (no navigation, no loss of filled content)
+    // No DeepSeek key configured: offer inline setup without losing the product details.
     if (!llmReady) {
       setNeedKey(true);
       // the panel may be mounting this very tick — defer the scroll until React has committed it to the DOM
@@ -490,31 +352,31 @@ export default function StartPage() {
     runGeneration();
   };
 
-  // paste an Atlas Key → validate → write full config → immediately continue with generation
-  const connectAtlasAndStart = async () => {
-    const key = atlasKey.trim();
+  const connectDeepSeekAndStart = async () => {
+    const key = deepseekKey.trim();
     if (!key || connecting || busy) return;
     setConnecting(true);
     setConnectError(null);
     try {
-      const res = await fetch("/api/ai/test-provider", {
+      const res = await fetch("/api/llm/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "atlas-cloud", apiKey: key }),
+        body: JSON.stringify({ baseUrl: "https://api.deepseek.com", apiKey: key, model: "deepseek-flash" }),
       });
-      const data = await res.json().catch(() => ({ status: "unknown" }));
-      // only block on "explicitly invalid"; unknown (network/endpoint uncertainty) passes through and lets generation attempt proceed
-      if (data.status === "invalid") {
-        setConnectError(t("atlasKeyInvalid"));
-        setConnecting(false);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        setConnectError(typeof data.error === "string" ? data.error : "DeepSeek connection failed");
         return;
       }
-      applyAtlasOneKey(key);
-      setConnecting(false);
+      useSettingsStore.getState().setLLM({
+        provider: "DeepSeek", baseUrl: "https://api.deepseek.com", apiKey: key,
+        model: "deepseek-flash", visionModel: "deepseek-flash",
+      });
       setNeedKey(false);
       await runGeneration();
     } catch {
-      setConnectError(t("atlasConnectFailed"));
+      setConnectError("Cannot connect to DeepSeek. Check your network and key.");
+    } finally {
       setConnecting(false);
     }
   };
@@ -612,33 +474,6 @@ export default function StartPage() {
         .cf-guide-step{display:flex;align-items:baseline;gap:9px;font-size:13px;color:var(--dim);line-height:1.55}
         .cf-guide-step b{flex:none;width:18px;height:18px;border-radius:999px;background:rgba(139,92,246,.18);color:var(--teal);font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;transform:translateY(2px)}
         .cf-guide-foot{margin-top:10px;font-size:12px;color:var(--muted)}
-        .cf-trends{max-width:620px;margin:26px auto 0;text-align:left;background:var(--surface);border:1px solid var(--bd);border-radius:16px;padding:14px 16px}
-        .cf-trends-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-        .cf-trends-lbl{font-size:13px;font-weight:600;color:var(--dim);letter-spacing:.02em}
-        .cf-trends-more{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border:1px solid var(--bd);border-radius:999px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer;transition:.18s}
-        .cf-trends-more:hover{color:var(--dim);border-color:var(--bd2)}
-        .cf-trend-list{display:flex;flex-direction:column;margin:0 -8px}
-        .cf-trow{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:9px;transition:.15s}
-        .cf-trow:hover{background:var(--surface2)}
-        .cf-trow .trk{flex:none;width:18px;text-align:center;font-size:12px;font-style:normal;font-weight:700;color:var(--muted)}
-        .cf-trow .trk.hot{color:#FDA4AF}
-        .cf-trow .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;background:none;border:0;color:var(--text);font:inherit;font-size:13.5px;cursor:pointer;padding:0}
-        .cf-trow .ttl:hover{color:var(--teal)}
-        .cf-trow .tv{flex:none;font-size:11px;color:var(--muted)}
-        .cf-trow .tclone{flex:none;font-size:11.5px;color:var(--muted);text-decoration:none;padding:3px 9px;border:1px solid var(--bd);border-radius:999px;transition:.15s}
-        .cf-trow .tclone:hover{color:var(--teal);border-color:rgba(139,92,246,.4)}
-        .cf-trends-src{margin-top:9px;font-size:11.5px;color:var(--muted)}
-        .cf-trends-cats{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px}
-        .cf-cat{padding:4px 10px;border:1px solid transparent;border-radius:999px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer;transition:.18s}
-        .cf-cat:hover{color:var(--dim)}
-        .cf-cat.on{border-color:rgba(139,92,246,.4);background:rgba(139,92,246,.08);color:var(--text)}
-        .cf-daily{display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--bd)}
-        .cf-daily-lbl{font-size:12.5px;font-weight:600;color:var(--dim);flex:none}
-        .cf-daily-input{flex:1;min-width:0;background:rgba(0,0,0,.25);border:1px solid var(--bd);border-radius:9px;color:var(--text);font:inherit;font-size:13px;padding:7px 11px;outline:none;transition:.18s}
-        .cf-daily-input:focus{border-color:rgba(139,92,246,.45)}
-        .cf-daily-btn{padding:7px 14px;border:0;border-radius:9px;background:var(--surface2);color:var(--text);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:inset 0 0 0 1px var(--bd2);transition:.18s;flex:none}
-        .cf-daily-btn:hover{box-shadow:inset 0 0 0 1px rgba(139,92,246,.45)}
-        .cf-daily-msg{margin-top:8px;font-size:12px;color:var(--dim)}
         .cf-examples{margin-top:24px;font-size:13px;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
         .cf-chip{padding:6px 12px;border:1px solid var(--bd);border-radius:999px;background:var(--surface);color:var(--dim);font:inherit;cursor:pointer;transition:.18s}
         .cf-chip:hover{border-color:rgba(139,92,246,.4);color:var(--text)}
@@ -702,10 +537,7 @@ export default function StartPage() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
                 {t("tabLink")}
               </button>
-              <button className={`cf-tab${mode === "topic" ? " on" : ""}`} onClick={() => setMode("topic")}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 19v3" /><path d="M8 22h8" /><rect x="9" y="2" width="6" height="13" rx="3" /><path d="M5 10a7 7 0 0 0 14 0" /></svg>
-                {t("tabTopic")}
-              </button>
+
             </div>
 
             {mode === "upload" ? (
@@ -746,16 +578,12 @@ export default function StartPage() {
                   className="cf-input"
                   value={link}
                   onChange={(e) => setLink(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && canStart && !busy) runGeneration(); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && canStart && !busy) onStart(); }}
                   placeholder={t("linkPlaceholder")}
                 />
                 <div className="cf-ds" style={{ marginTop: 8 }}>{t("linkHint")}</div>
               </div>
-            ) : (
-              <div className="cf-field" style={{ marginTop: 0 }}>
-                <textarea className="cf-area" style={{ minHeight: 120 }} value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={t("topicPlaceholder")} />
-              </div>
-            )}
+            ) : null}
 
             {/* generation-task mode: the free/paid fork every mature product makes explicit —
                 cost and key requirements live ON the option, never behind it */}
@@ -769,7 +597,7 @@ export default function StartPage() {
             </div>
             {/* commerce form: only asked when it actually changes the outcome (AI visuals);
                 the free quick cut uses generic stock footage where this choice is moot */}
-            {genMode === "ai" && mode !== "topic" && (
+            {genMode === "ai" && (
               <div className="cf-formrow">
                 <span className="cf-form-lbl">{t("formLabel")}</span>
                 {(Object.keys(FORM_PRESETS) as FormId[]).map((f) => (
@@ -786,7 +614,7 @@ export default function StartPage() {
               </div>
             )}
             {/* presenter picking follows the domestic digital-human convention: face → lines → voice */}
-            {genMode === "ai" && mode !== "topic" && (form === "presenter" || form === "drama") && characters.length > 0 && (
+            {genMode === "ai" && (form === "presenter" || form === "drama") && characters.length > 0 && (
               <div className="cf-formrow">
                 <span className="cf-form-lbl">{t("presenterLabel")}</span>
                 <select className="cf-form-select" value={presenterId} onChange={(e) => setPresenterId(e.target.value)}>
@@ -802,34 +630,34 @@ export default function StartPage() {
             {needKey && !llmReady && (
               <div className="cf-keyform" ref={keyformRef}>
                 <div className="cf-keyhead">
-                  <span className="badge">{t("atlasBadge")}</span>
-                  {t("atlasTitle")}
+                  <span className="badge">DeepSeek</span>
+                  DeepSeek API
                   <button type="button" className="cf-keyclose" aria-label={t("atlasDismiss")} title={t("atlasDismiss")} onClick={() => setNeedKey(false)}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
                   </button>
                 </div>
                 <div className="cf-keydesc">
-                  {t("atlasDesc")}{" "}
-                  <a href={ATLAS_KEYS_URL} target="_blank" rel="noreferrer">{t("atlasGetKey")} ↗</a>
+                  Enter a DeepSeek API key to generate product scripts. 
+                  <a href="https://platform.deepseek.com/" target="_blank" rel="noreferrer">Get API key ↗</a>
                 </div>
                 <div className="cf-keyrow">
                   <input
                     className="cf-keyinput"
                     type="password"
-                    value={atlasKey}
+                    value={deepseekKey}
                     autoFocus
-                    onChange={(e) => setAtlasKey(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") connectAtlasAndStart(); }}
-                    placeholder={t("atlasKeyPlaceholder")}
+                    onChange={(e) => setDeepseekKey(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") connectDeepSeekAndStart(); }}
+                    placeholder="DeepSeek API key"
                   />
-                  <button className="cf-keybtn" onClick={connectAtlasAndStart} disabled={atlasKey.trim().length === 0 || connecting || busy}>
-                    {connecting ? t("atlasConnecting") : busy ? (stage || t("busyDefault")) : t("atlasConnectStart")}
+                  <button className="cf-keybtn" onClick={connectDeepSeekAndStart} disabled={deepseekKey.trim().length === 0 || connecting || busy}>
+                    {connecting ? "Connecting…" : busy ? (stage || t("busyDefault")) : "Connect & Create"}
                     {!connecting && !busy && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 6l6 6-6 6" /></svg>}
                   </button>
                 </div>
                 {connectError && <div className="cf-keyerr">{connectError}</div>}
                 <div className="cf-keyalt">
-                  <Link href="/settings?tab=llm">{t("atlasUseOther")}</Link>
+                  <Link href="/settings?tab=llm">Open DeepSeek settings</Link>
                 </div>
               </div>
             )}
@@ -838,7 +666,7 @@ export default function StartPage() {
                 {busy ? (stage || t("busyDefault")) : t("ctaStart")}
                 {!busy && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 6l6 6-6 6" /></svg>}
               </button>
-              <div className="cf-reassure">{t("reassureLead")}<b>Atlas Cloud</b>{t("reassureTail")}</div>
+              <div className="cf-reassure">Text generation uses <b>DeepSeek</b>; image/video providers stay configurable.</div>
             </div>
             {error && <div className="cf-err">{error}</div>}
               </>
@@ -878,77 +706,6 @@ export default function StartPage() {
                   );
                 })}
               </div>
-            </div>
-          )}
-
-          {trends.length > 0 && (
-            <div className="cf-trends">
-              <div className="cf-trends-head">
-                <span className="cf-trends-lbl">{t("trendsLabel")}</span>
-                <button type="button" className="cf-trends-more" onClick={() => setTrendsPage((p) => p + 1)}>
-                  {t("trendsRefresh")}
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>
-                </button>
-              </div>
-              {trendsCats.length > 1 && (
-                <div className="cf-trends-cats">
-                  {(["all", ...trendsCats] as const).map((id) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className={`cf-cat${trendsCat === id ? " on" : ""}`}
-                      onClick={() => { setTrendsCat(id); setTrendsPage(0); }}
-                    >
-                      {id === "all" ? t("trendCatAll") : t(`trendCat_${id}`)}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {/* ranked list rows: scan-friendly, one action per row (was a wall of glued pills) */}
-              <div className="cf-trend-list">
-                {trendsShown.map((tp, i) => (
-                  <div key={`${tp.source || "t"}-${tp.rank ?? tp.title}`} className="cf-trow">
-                    <b className={`trk${typeof tp.rank === "number" && tp.rank <= 3 ? " hot" : ""}`}>
-                      {typeof tp.rank === "number" ? tp.rank : i + 1}
-                    </b>
-                    <button
-                      type="button"
-                      className="ttl"
-                      title={tp.context || tp.title}
-                      onClick={() => pickTrend(tp)}
-                    >
-                      {tp.title}
-                    </button>
-                    {tp.traffic && <span className="tv">{tp.traffic}</span>}
-                    <Link
-                      href={`/project/clone?trend=${encodeURIComponent(tp.title)}`}
-                      className="tclone"
-                      title={t("trendCloneAria")}
-                      aria-label={t("trendCloneAria")}
-                    >
-                      {t("trendCloneLabel")}
-                    </Link>
-                  </div>
-                ))}
-              </div>
-              <div className="cf-trends-src">{t("trendsSourceNote", { source: trendsSourceLabel })}</div>
-
-              <div className="cf-daily">
-                <span className="cf-daily-lbl">{t("dailyLabel")}</span>
-                <input
-                  className="cf-daily-input"
-                  value={dailyPersona}
-                  onChange={(e) => onPersonaChange(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") runDailyPick(); }}
-                  placeholder={t("dailyPersonaPlaceholder")}
-                />
-                <button type="button" className="cf-daily-btn" onClick={runDailyPick}>{t("dailyPick")}</button>
-              </div>
-              {(dailyMsg || (dailyLast && dailyLast.date === localDateStamp())) && (
-                <div className="cf-daily-msg">
-                  {dailyMsg || t("dailyDoneHint").replace("{topic}", dailyLast?.topic ?? "")}
-                </div>
-              )}
             </div>
           )}
 

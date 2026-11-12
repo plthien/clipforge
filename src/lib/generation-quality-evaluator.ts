@@ -3,6 +3,7 @@ import "server-only";
 import type OpenAI from "openai";
 import { createLLMClient, jsonModeParams, withLLMErrors } from "@/lib/llm-error";
 import type { LLMConfig } from "@/lib/script-engine/generator";
+import { DEEPSEEK_VISION_MODEL } from "@/lib/deepseek-policy";
 import {
   buildQualityEvaluationPrompt,
   parseGenerationQuality,
@@ -10,7 +11,7 @@ import {
   type ShotQualityContract,
 } from "@/lib/generation-quality";
 
-/** Evaluate one generated output through the user's configured OpenAI-compatible vision model. */
+/** Evaluate generated media using the official DeepSeek Flash vision model. */
 export async function evaluateGenerationQuality(input: {
   contract: ShotQualityContract;
   outputImageDataUrl: string;
@@ -19,7 +20,7 @@ export async function evaluateGenerationQuality(input: {
   config: LLMConfig;
   sampleContext?: string;
 }): Promise<GenerationQualityReport> {
-  const model = input.config.visionModel || input.config.model;
+  const model = DEEPSEEK_VISION_MODEL;
   const client = createLLMClient({ ...input.config, model });
   const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
     { type: "text", text: buildQualityEvaluationPrompt(input.contract, input.locale, input.sampleContext) },

@@ -1,6 +1,7 @@
 import { mkdir, rm, writeFile } from "fs/promises";
 import { dirname, join } from "path";
 import { runTranscriptFfmpeg } from "@/lib/transcript-render-process";
+import { ffmpegComplexFilterFileFlag } from "@/lib/ffmpeg-path";
 import { getOutputDir } from "@/lib/paths";
 import {
   karaokeLinesFromWords,
@@ -11,7 +12,7 @@ import {
   type TranscriptEditPlan,
 } from "@/lib/transcript-editor";
 import {
-  escapeSubtitlesPath,
+  escapeSubtitlesFilterPath,
   resolveChineseFontFamily,
   resolveChineseFontFile,
   withComposeSlot,
@@ -77,8 +78,8 @@ export function buildTranscriptRenderInvocation(input: BuildTranscriptRenderInpu
   const normalizedVideo = input.subtitlePath ? "vbase" : "vout";
   filters.push(`[${currentVideo}]scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1,format=yuv420p[${normalizedVideo}]`);
   if (input.subtitlePath) {
-    const fonts = input.fontDirectory ? `:fontsdir=${escapeSubtitlesPath(input.fontDirectory)}` : "";
-    filters.push(`[vbase]subtitles=${escapeSubtitlesPath(input.subtitlePath)}${fonts}[vout]`);
+    const fonts = input.fontDirectory ? `:fontsdir=${escapeSubtitlesFilterPath(input.fontDirectory)}` : "";
+    filters.push(`[vbase]subtitles=${escapeSubtitlesFilterPath(input.subtitlePath)}${fonts}[vout]`);
   }
 
   return {
@@ -151,7 +152,7 @@ export async function renderTranscriptEdit(input: RenderTranscriptEditInput): Pr
     duration,
   });
   await writeFile(filterPath, invocation.filterComplex, "utf8");
-  const args = [...invocation.inputArgs, "-filter_complex_script", filterPath, ...invocation.outputArgs];
+  const args = [...invocation.inputArgs, ffmpegComplexFilterFileFlag(), filterPath, ...invocation.outputArgs];
   try {
     await withComposeSlot(() => {
       input.signal?.throwIfAborted();

@@ -241,17 +241,22 @@ export async function downloadStockFile(
   url: string,
   destDir: string,
   fileBaseName: string,
-  mediaType?: StockMediaType
+  mediaType?: StockMediaType,
+  source?: StockSourceId
 ): Promise<DownloadResult> {
   const { writeFile, copyFile, stat } = await import("fs/promises");
-  const { join } = await import("path");
+  const { join, isAbsolute, win32 } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
 
   const safeBaseName = fileBaseName.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "file";
 
-  // local media branch: url is an absolute local path or file:// (constructed exclusively by scanLocalMaterials via readdir from the project pool, never user input);
-  // copy directly instead of using network fetch (fetch does not support file paths). Size limit is still enforced, consistent with network downloads.
-  if (url.startsWith("/") || url.startsWith("file://")) {
-    const srcPath = url.startsWith("file://") ? new URL(url).pathname : url;
+  // Local candidates originate from server-side library scans. Windows drive and UNC
+  // paths must never reach fetch(); file URLs must use platform-aware decoding.
+  const isFileUrl = /^file:\/\//i.test(url);
+  if (isAbsolute(url) || win32.isAbsolute(url) || isFileUrl) {
+    // Only server-side local library results may request filesystem copies.
+    if (source && source !== "local") throw new Error("INVALID_STOCK_SOURCE_SCHEME");
+    const srcPath = isFileUrl ? fileURLToPath(url) : url;
     const st = await stat(srcPath);
     if (st.size > MAX_DOWNLOAD_BYTES) throw new Error(`素材体积 ${st.size} 超过上限 ${MAX_DOWNLOAD_BYTES}`);
     const localExt = inferExtension(srcPath, null, mediaType);
@@ -260,8 +265,10 @@ export async function downloadStockFile(
     return { filePath: destPath, bytes: st.size };
   }
 
+  if (source === "local") throw new Error("INVALID_STOCK_SOURCE_SCHEME");
+  if (!/^https?:\/\//i.test(url)) throw new Error("UNSUPPORTED_STOCK_URL_SCHEME");
   const res = await fetchWithTimeout(url);
-  if (!res.ok) throw new Error(`素材下载失败 ${res.status}: ${url}`);
+  if (!res.ok) throw new Error(`素材下载失败 HTTP ${res.status}`);
 
   const contentType = res.headers.get("content-type");
   const declaredLen = Number(res.headers.get("content-length") || 0);

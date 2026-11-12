@@ -35,7 +35,21 @@ app.on("browser-window-created", (_event, window) => {
         for (const key of keys) if (JSON.parse(storage.getItem(key) || '{}').state?.smokeMarker !== 'persisted') throw new Error('Lost store: ' + key);
         const health = await (await fetch('/api/health')).json();
         if (health.db.status !== 'ok') throw new Error(health.db.status);
-        return { origin: location.origin, stores: keys.length, database: health.db.status };
+        if (location.hostname !== '127.0.0.1') throw new Error('Server exposed beyond loopback: ' + location.hostname);
+        for (const page of ['/start', '/products', '/projects', '/project/new', '/settings?tab=llm']) {
+          const res = await fetch(page);
+          if (!res.ok) throw new Error('Missing local UI route: ' + page + ': ' + res.status);
+        }
+        for (const removed of ['/api/trends', '/api/topic/script', '/project/topic']) {
+          if ((await fetch(removed)).status !== 404) throw new Error('Removed workflow still reachable: ' + removed);
+        }
+        for (const endpoint of ['/api/llm/test', '/api/llm/models']) {
+          const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ baseUrl: 'https://api.openai.com/v1', model: 'gpt-5', apiKey: 'SMOKE_KEY' }) });
+          if (res.status !== 400) throw new Error('DeepSeek backend guard missing: ' + endpoint + ': ' + res.status);
+        }
+        return { origin: location.origin, stores: keys.length, database: health.db.status,
+          uiPages: 5, removedRoutes: 3, backendGuards: 2 };
       })()`);
       console.log("DESKTOP_SMOKE", JSON.stringify({ mode, load: ++loads, ...result }));
       if (loads === 1 && process.platform === "darwin") {

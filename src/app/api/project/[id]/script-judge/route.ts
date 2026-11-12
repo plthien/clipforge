@@ -79,7 +79,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     );
     return NextResponse.json(report);
   } catch (error) {
-    console.error("判官团评审失败:", error);
+    console.error("Script judge failed:", error instanceof Error ? error.name : "unknown");
     const { zh, en } = llmErrorPair(error);
     return NextResponse.json(
       { error: errText(req, zh || "判官团评审失败", en || "Judge panel failed") },

@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ template });
   } catch (error) {
-    console.error("AI 定制模板生成失败:", error);
+    console.error("AI template generation failed:", error instanceof Error ? error.name : "unknown");
     const { zh, en } = llmErrorPair(error);
     return apiError(req, `AI 定制模板生成失败: ${zh}`, `AI template generation failed: ${en}`, 500);
   }
